@@ -19,9 +19,18 @@ function generateNonce(): string {
 export async function signInWithGoogle(): Promise<void> {
   // Build Google OAuth URL
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  
+  if (!clientId) {
+    throw new Error('VITE_GOOGLE_CLIENT_ID is not set. Please add it to your Vercel environment variables.');
+  }
+  
   const redirectUri = `${window.location.origin}/auth/callback`;
   const scope = 'openid email profile';
   const state = generateState();
+  
+  console.log('[OAuth] Starting Google sign in...');
+  console.log('[OAuth] Client ID:', clientId.substring(0, 10) + '...');
+  console.log('[OAuth] Redirect URI:', redirectUri);
   
   // Store state in sessionStorage for verification
   sessionStorage.setItem('oauth_state', state);
@@ -37,6 +46,7 @@ export async function signInWithGoogle(): Promise<void> {
   });
   
   const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  console.log('[OAuth] Redirecting to:', googleAuthUrl);
   window.location.href = googleAuthUrl;
 }
 

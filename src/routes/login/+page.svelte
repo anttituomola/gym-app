@@ -65,12 +65,14 @@
   async function handleGoogleSignIn() {
     error = '';
     isGoogleLoading = true;
+    console.log('[Login] Google sign in clicked');
     
     try {
       // Use custom OAuth flow (cross-origin friendly)
       await signInWithGoogle();
       // Page will redirect to Google, then to callback
     } catch (err) {
+      console.error('[Login] Google sign in error:', err);
       isGoogleLoading = false;
       error = err instanceof Error ? err.message : 'Google sign in failed';
     }
