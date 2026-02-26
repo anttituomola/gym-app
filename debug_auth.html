@@ -1,0 +1,29 @@
+<script>
+// Run this in your browser console on the login page
+
+// Check env var
+console.log('VITE_GOOGLE_CLIENT_ID:', import.meta.env?.VITE_GOOGLE_CLIENT_ID);
+
+// Check convex
+import('./src/lib/convex.ts').then(m => {
+  console.log('Convex module loaded');
+  console.log('Convex client:', m.convex);
+}).catch(e => console.error('Failed to load convex:', e));
+
+// Test a simple mutation
+async function testAuth() {
+  const { convex, api } = await import('./src/lib/convex.ts');
+  try {
+    console.log('Testing login mutation...');
+    const result = await convex.mutation(api.svelteAuth.login, { 
+      email: 'test@test.com', 
+      password: 'test12345' 
+    });
+    console.log('Result:', result);
+  } catch (e) {
+    console.error('Error:', e);
+  }
+}
+
+testAuth();
+</script>

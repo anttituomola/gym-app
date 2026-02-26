@@ -11,12 +11,18 @@
   let isGoogleLoading = false;
   let successMessage = '';
   
+  console.log('[LoginPage] Component loaded');
+  
   // Redirect if already authenticated
   $: if ($authStore.isAuthenticated && !$authStore.isLoading) {
+    console.log('[LoginPage] Already authenticated, redirecting...');
     goto('/');
   }
   
-  async function handleSubmit() {
+  async function handleSubmit(event: Event) {
+    console.log('[LoginPage] handleSubmit called');
+    event.preventDefault();
+    
     if (!email || !password) {
       error = 'Please enter both email and password';
       return;
@@ -31,31 +37,40 @@
     successMessage = '';
     isLoading = true;
     
-    const result = isSignUp 
-      ? await signUpWithEmail(email, password)
-      : await signInWithEmail(email, password);
-    
-    isLoading = false;
-    
-    if (!result.success) {
-      error = result.error || 'Authentication failed';
-    } else {
-      // Show message if account was linked
-      if (result.linked) {
-        successMessage = 'Password added to your existing account!';
-        setTimeout(() => {
+    try {
+      console.log('[LoginPage] Calling auth function...');
+      const result = isSignUp 
+        ? await signUpWithEmail(email, password)
+        : await signInWithEmail(email, password);
+      
+      console.log('[LoginPage] Auth result:', result);
+      
+      if (!result.success) {
+        error = result.error || 'Authentication failed';
+      } else {
+        // Show message if account was linked
+        if (result.linked) {
+          successMessage = 'Password added to your existing account!';
+          setTimeout(() => {
+            setAuthState(result.userId || '', email);
+            goto('/');
+          }, 1500);
+        } else {
+          // Update auth state and redirect
           setAuthState(result.userId || '', email);
           goto('/');
-        }, 1500);
-      } else {
-        // Update auth state and redirect
-        setAuthState(result.userId || '', email);
-        goto('/');
+        }
       }
+    } catch (e) {
+      console.error('[LoginPage] Unexpected error:', e);
+      error = 'Unexpected error: ' + (e instanceof Error ? e.message : String(e));
+    } finally {
+      isLoading = false;
     }
   }
   
   async function handleGoogleSignIn() {
+    console.log('[LoginPage] Google sign in clicked');
     error = '';
     successMessage = '';
     isGoogleLoading = true;
@@ -148,7 +163,7 @@
         </div>
       </div>
       
-      <form on:submit|preventDefault={handleSubmit} class="space-y-4">
+      <form on:submit={handleSubmit} class="space-y-4">
         <div>
           <label for="email" class="block text-sm font-medium mb-1">Email</label>
           <input
@@ -197,6 +212,11 @@
           {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
         </button>
       </div>
+    </div>
+    
+    <!-- Debug info - remove after fixing -->
+    <div class="mt-4 p-2 text-xs text-text-muted text-center">
+      Debug: Check browser console for logs
     </div>
     
     <!-- Info notice -->
