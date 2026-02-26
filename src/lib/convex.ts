@@ -2,7 +2,6 @@ import { ConvexClient } from 'convex/browser';
 import { env } from '$env/dynamic/public';
 import { writable } from 'svelte/store';
 import { api } from '$convex/_generated/api.js';
-import { checkAuthenticated } from './auth';
 
 // Create a singleton Convex client
 const convexUrl = env.PUBLIC_CONVEX_URL;
@@ -15,7 +14,10 @@ if (!convexUrl) {
   );
 }
 
-export const convex = new ConvexClient(convexUrl);
+export const convex = new ConvexClient(convexUrl, {
+  // Enable unsaved changes warning
+  unsavedChangesWarning: false,
+});
 
 // Export typed API
 export { api };
@@ -33,7 +35,7 @@ export const authStore = writable<{
   email: null,
 });
 
-// Navigation visibility store (for pages that want to hide the main nav)
+// Navigation visibility store
 export const navVisibilityStore = writable<{
   hideMainNav: boolean;
 }>({
@@ -43,13 +45,14 @@ export const navVisibilityStore = writable<{
 // Initialize auth state
 export async function initAuth() {
   try {
+    const { checkAuthenticated } = await import('./auth');
     const isAuth = await checkAuthenticated();
     
     if (isAuth) {
       authStore.set({
         isLoading: false,
         isAuthenticated: true,
-        userId: null, // We'll get this from the session
+        userId: null,
         email: '',
       });
     } else {
