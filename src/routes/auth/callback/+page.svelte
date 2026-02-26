@@ -9,14 +9,31 @@
   let successMessage = '';
   
   onMount(async () => {
-    console.log('[Callback] Page loaded');
+    // Only run on client
+    if (typeof window === 'undefined') {
+      console.log('[Callback] Running on server, skipping...');
+      return;
+    }
+    
+    console.log('[Callback] Page loaded (client)');
     console.log('[Callback] Full URL:', window.location.href);
-    console.log('[Callback] Hash:', window.location.hash);
-    console.log('[Callback] Search:', window.location.search);
+    console.log('[Callback] Hash present:', !!window.location.hash);
+    console.log('[Callback] Hash value:', window.location.hash);
+    
+    // Wait a moment for URL to be fully processed
+    await new Promise(resolve => setTimeout(resolve, 100));
     
     try {
       // Get the hash fragment from URL (for implicit flow)
       const hash = window.location.hash;
+      
+      if (!hash || hash.length < 2) {
+        console.error('[Callback] No hash fragment found!');
+        error = 'No authentication data received from Google. Please try again.';
+        isLoading = false;
+        return;
+      }
+      
       const params = new URLSearchParams(hash.substring(1));
       
       const accessToken = params.get('access_token');
@@ -24,9 +41,16 @@
       const errorParam = params.get('error');
       const errorDescription = params.get('error_description');
       
+      console.log('[Callback] access_token present:', !!accessToken);
+      console.log('[Callback] state present:', !!state);
+      console.log('[Callback] error param:', errorParam);
+      
       // Verify state to prevent CSRF
       const savedState = sessionStorage.getItem('oauth_state');
       const provider = sessionStorage.getItem('oauth_provider') || 'google';
+      
+      console.log('[Callback] saved state present:', !!savedState);
+      console.log('[Callback] states match:', state === savedState);
       
       // Clear stored state
       sessionStorage.removeItem('oauth_state');
@@ -51,7 +75,10 @@
       }
       
       // Process the OAuth callback
+      console.log('[Callback] Processing OAuth callback...');
       const result = await handleOAuthCallback(provider, accessToken);
+      
+      console.log('[Callback] Result:', result);
       
       if (!result.success) {
         error = result.error || 'Authentication failed';
@@ -72,9 +99,13 @@
         setTimeout(() => {
           goto('/');
         }, 1000);
+      } else {
+        error = 'Missing user information from authentication';
+        isLoading = false;
       }
       
     } catch (err) {
+      console.error('[Callback] Error:', err);
       error = err instanceof Error ? err.message : 'An unexpected error occurred';
       isLoading = false;
     }
