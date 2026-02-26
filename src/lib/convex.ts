@@ -14,10 +14,7 @@ if (!convexUrl) {
   );
 }
 
-export const convex = new ConvexClient(convexUrl, {
-  // Enable unsaved changes warning
-  unsavedChangesWarning: false,
-});
+export const convex = new ConvexClient(convexUrl);
 
 // Export typed API
 export { api };

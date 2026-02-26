@@ -13,6 +13,7 @@ import type * as exercises from "../exercises.js";
 import type * as http from "../http.js";
 import type * as import_ from "../import.js";
 import type * as programs from "../programs.js";
+import type * as svelteAuth from "../svelteAuth.js";
 import type * as userProfiles from "../userProfiles.js";
 import type * as warmup from "../warmup.js";
 import type * as workouts from "../workouts.js";
@@ -29,6 +30,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   import: typeof import_;
   programs: typeof programs;
+  svelteAuth: typeof svelteAuth;
   userProfiles: typeof userProfiles;
   warmup: typeof warmup;
   workouts: typeof workouts;

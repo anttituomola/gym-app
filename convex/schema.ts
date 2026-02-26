@@ -5,11 +5,31 @@ import { authTables } from "@convex-dev/auth/server";
 export default defineSchema({
   ...authTables,
   
-  // Custom tables for your app
+  // Custom auth tables for SvelteKit OAuth
+  authTokens: defineTable({
+    userId: v.id("users"),
+    token: v.string(),
+    expiresAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_user", ["userId"]),
+  
+  oauthAccounts: defineTable({
+    userId: v.id("users"),
+    provider: v.string(),
+    providerAccountId: v.string(),
+    email: v.optional(v.string()),
+    name: v.optional(v.string()),
+    image: v.optional(v.string()),
+  })
+    .index("by_provider_account", ["provider", "providerAccountId"])
+    .index("by_user", ["userId"]),
+  
+  // App tables
   userProfiles: defineTable({
     userId: v.id("users"),
     exercises: v.record(
-      v.string(), // exerciseId
+      v.string(),
       v.object({
         currentWeight: v.number(),
         weightUnit: v.union(v.literal("kg"), v.literal("lbs")),
