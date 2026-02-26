@@ -7,78 +7,65 @@
   let error = '';
   let isLoading = true;
   let successMessage = '';
+  let debugInfo = '';
+  
+  // Check hash immediately and also in onMount
+  if (typeof window !== 'undefined') {
+    console.log('[Callback] Script executing, window.location.hash:', window.location.hash);
+    debugInfo = 'Hash: ' + (window.location.hash ? 'present' : 'missing');
+  }
   
   onMount(async () => {
-    // Only run on client
-    if (typeof window === 'undefined') {
-      console.log('[Callback] Running on server, skipping...');
+    console.log('[Callback] onMount triggered');
+    console.log('[Callback] window.location.hash:', window.location.hash);
+    
+    // Wait for any hydration to complete
+    await new Promise(resolve => setTimeout(resolve, 200));
+    
+    const hash = window.location.hash;
+    
+    if (!hash || hash.length < 2) {
+      console.error('[Callback] No hash found after delay');
+      error = 'No authentication data received. Please try again.';
+      isLoading = false;
       return;
     }
     
-    console.log('[Callback] Page loaded (client)');
-    console.log('[Callback] Full URL:', window.location.href);
-    console.log('[Callback] Hash present:', !!window.location.hash);
-    console.log('[Callback] Hash value:', window.location.hash);
-    
-    // Wait a moment for URL to be fully processed
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
     try {
-      // Get the hash fragment from URL (for implicit flow)
-      const hash = window.location.hash;
-      
-      if (!hash || hash.length < 2) {
-        console.error('[Callback] No hash fragment found!');
-        error = 'No authentication data received from Google. Please try again.';
-        isLoading = false;
-        return;
-      }
-      
       const params = new URLSearchParams(hash.substring(1));
       
       const accessToken = params.get('access_token');
       const state = params.get('state');
       const errorParam = params.get('error');
-      const errorDescription = params.get('error_description');
       
-      console.log('[Callback] access_token present:', !!accessToken);
-      console.log('[Callback] state present:', !!state);
-      console.log('[Callback] error param:', errorParam);
-      
-      // Verify state to prevent CSRF
-      const savedState = sessionStorage.getItem('oauth_state');
-      const provider = sessionStorage.getItem('oauth_provider') || 'google';
-      
-      console.log('[Callback] saved state present:', !!savedState);
-      console.log('[Callback] states match:', state === savedState);
-      
-      // Clear stored state
-      sessionStorage.removeItem('oauth_state');
-      sessionStorage.removeItem('oauth_provider');
+      console.log('[Callback] access_token:', accessToken ? 'present' : 'missing');
+      console.log('[Callback] state:', state ? 'present' : 'missing');
       
       if (errorParam) {
-        error = `Authentication failed: ${errorDescription || errorParam}`;
+        error = `Auth error: ${errorParam}`;
         isLoading = false;
         return;
       }
       
       if (!accessToken) {
-        error = 'No access token received from authentication provider';
+        error = 'No access token received';
         isLoading = false;
         return;
       }
+      
+      // Verify state
+      const savedState = sessionStorage.getItem('oauth_state');
+      sessionStorage.removeItem('oauth_state');
+      sessionStorage.removeItem('oauth_provider');
       
       if (state !== savedState) {
-        error = 'Invalid state parameter. Please try again.';
+        error = 'Invalid state - possible security issue';
         isLoading = false;
         return;
       }
       
-      // Process the OAuth callback
-      console.log('[Callback] Processing OAuth callback...');
-      const result = await handleOAuthCallback(provider, accessToken);
-      
-      console.log('[Callback] Result:', result);
+      // Process the callback
+      const result = await handleOAuthCallback('google', accessToken);
       
       if (!result.success) {
         error = result.error || 'Authentication failed';
@@ -86,60 +73,44 @@
         return;
       }
       
-      // Show appropriate message
-      if (result.isNewUser) {
-        successMessage = 'Welcome! Your account has been created.';
-      } else {
-        successMessage = 'Successfully signed in!';
-      }
+      successMessage = result.isNewUser ? 'Welcome!' : 'Signed in!';
       
-      // Update auth state and redirect
       if (result.userId && result.email) {
         setAuthState(result.userId, result.email);
-        setTimeout(() => {
-          goto('/');
-        }, 1000);
-      } else {
-        error = 'Missing user information from authentication';
-        isLoading = false;
+        setTimeout(() => goto('/'), 1000);
       }
       
     } catch (err) {
       console.error('[Callback] Error:', err);
-      error = err instanceof Error ? err.message : 'An unexpected error occurred';
+      error = err instanceof Error ? err.message : 'Unknown error';
       isLoading = false;
     }
   });
 </script>
 
 <svelte:head>
-  <title>Completing Sign In - LiftLog</title>
+  <title>Sign In - LiftLog</title>
 </svelte:head>
 
 <div class="min-h-screen flex items-center justify-center p-4 bg-bg">
   <div class="w-full max-w-sm">
-    <!-- Logo -->
     <div class="text-center mb-8">
       <div class="text-5xl mb-4">🏋️</div>
       <h1 class="text-2xl font-bold">LiftLog</h1>
     </div>
     
-    <!-- Status Card -->
     <div class="bg-surface rounded-2xl p-6 shadow-xl text-center">
       {#if isLoading}
         <div class="flex flex-col items-center gap-4">
           <div class="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
           <p class="text-text-muted">Completing sign in...</p>
+          <p class="text-xs text-text-muted">{debugInfo}</p>
         </div>
       {:else if error}
         <div class="text-danger mb-4">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
           <h2 class="text-lg font-semibold mb-2">Sign In Failed</h2>
-        </div>
-        <div class="bg-danger/20 text-danger rounded-lg p-3 mb-4 text-sm">
-          {error}
+          <p class="text-sm">{error}</p>
+          <p class="text-xs mt-2 text-text-muted">{debugInfo}</p>
         </div>
         <button
           on:click={() => goto('/login')}
@@ -149,13 +120,9 @@
         </button>
       {:else}
         <div class="text-success mb-4">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
           <h2 class="text-lg font-semibold mb-2">Success!</h2>
+          <p>{successMessage}</p>
         </div>
-        <p class="text-text-muted mb-4">{successMessage}</p>
-        <p class="text-sm text-text-muted">Redirecting you...</p>
       {/if}
     </div>
   </div>
