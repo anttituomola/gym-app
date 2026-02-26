@@ -67,7 +67,9 @@
     isGoogleLoading = true;
     
     try {
+      // Use custom OAuth flow (cross-origin friendly)
       await signInWithGoogle();
+      // Page will redirect to Google, then to callback
     } catch (err) {
       isGoogleLoading = false;
       error = err instanceof Error ? err.message : 'Google sign in failed';
