@@ -5,7 +5,19 @@ import { authTables } from "@convex-dev/auth/server";
 export default defineSchema({
   ...authTables,
   
-  // Custom auth for SvelteKit
+  // OAuth account linking - links external OAuth accounts to users
+  oauthAccounts: defineTable({
+    userId: v.id("users"),
+    provider: v.string(), // "google", "github", etc.
+    providerAccountId: v.string(), // Google's sub/ID
+    email: v.optional(v.string()),
+    name: v.optional(v.string()),
+    image: v.optional(v.string()),
+  })
+    .index("by_provider_account", ["provider", "providerAccountId"])
+    .index("by_user", ["userId"]),
+  
+  // Custom auth for SvelteKit (kept for backward compatibility)
   authTokens: defineTable({
     userId: v.id("users"),
     token: v.string(),

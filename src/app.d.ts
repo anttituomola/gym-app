@@ -10,6 +10,10 @@ declare global {
 		interface PageState {}
 		interface Platform {}
 	}
+	
+	interface ImportMetaEnv {
+		VITE_GOOGLE_CLIENT_ID: string;
+	}
 }
 
 export {};
