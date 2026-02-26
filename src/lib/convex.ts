@@ -7,10 +7,14 @@ import { getAuthToken, verifyAuthToken } from './auth';
 // Create a singleton Convex client
 const convexUrl = env.PUBLIC_CONVEX_URL;
 if (!convexUrl) {
-  console.warn('PUBLIC_CONVEX_URL not set');
+  throw new Error(
+    'PUBLIC_CONVEX_URL environment variable is not set. ' +
+    'Please set it in your Vercel project settings: ' +
+    'Project Settings > Environment Variables > Add PUBLIC_CONVEX_URL'
+  );
 }
 
-export const convex = new ConvexClient(convexUrl || '');
+export const convex = new ConvexClient(convexUrl);
 
 // Export typed API
 export { api };
