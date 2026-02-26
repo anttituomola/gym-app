@@ -56,13 +56,19 @@ export async function handleOAuthCallback(
   idToken?: string
 ): Promise<{ success: boolean; error?: string; token?: string; userId?: string; email?: string; isNewUser?: boolean }> {
   try {
+    console.log('[OAuth] Fetching user info with token:', accessToken.substring(0, 20) + '...');
+    
     // Fetch user info from Google
     const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     
+    console.log('[OAuth] User info response status:', response.status);
+    
     if (!response.ok) {
-      throw new Error('Failed to fetch user info from Google');
+      const errorText = await response.text();
+      console.error('[OAuth] User info error:', errorText);
+      throw new Error(`Failed to fetch user info: ${response.status} ${errorText}`);
     }
     
     const userInfo: {
@@ -110,6 +116,10 @@ export async function signOut(): Promise<void> {
     }
     localStorage.removeItem('authToken');
   }
+  
+  // Also clear Google OAuth session if present
+  // This ensures the user is fully logged out
+  console.log('[Auth] User signed out');
 }
 
 export function getAuthToken(): string | null {

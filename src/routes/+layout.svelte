@@ -38,6 +38,13 @@
   
   async function handleLogout() {
     await signOut();
+    // Update auth store to reflect logged out state
+    authStore.set({
+      isLoading: false,
+      isAuthenticated: false,
+      userId: null,
+      email: null,
+    });
     goto('/login');
   }
 </script>
