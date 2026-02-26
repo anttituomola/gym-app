@@ -1,82 +1,27 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { handleOAuthCallback } from '$lib/auth';
+  import { checkAuthenticated } from '$lib/auth';
   import { setAuthState } from '$lib/convex';
-  import { page } from '$app/stores';
   
   let error = '';
   let isLoading = true;
-  let successMessage = '';
   
   onMount(async () => {
+    // Convex auth handles the OAuth callback via HTTP actions
+    // After Google redirects back, we just need to check if we're authenticated
     try {
-      // Get the hash fragment from URL (for implicit flow)
-      const hash = window.location.hash;
-      const params = new URLSearchParams(hash.substring(1));
+      const isAuth = await checkAuthenticated();
       
-      const accessToken = params.get('access_token');
-      const idToken = params.get('id_token');
-      const state = params.get('state');
-      const errorParam = params.get('error');
-      const errorDescription = params.get('error_description');
-      
-      // Verify state to prevent CSRF
-      const savedState = sessionStorage.getItem('oauth_state');
-      const provider = sessionStorage.getItem('oauth_provider') || 'google';
-      
-      // Clear stored state
-      sessionStorage.removeItem('oauth_state');
-      sessionStorage.removeItem('oauth_provider');
-      
-      if (errorParam) {
-        error = `Authentication failed: ${errorDescription || errorParam}`;
-        isLoading = false;
-        return;
-      }
-      
-      if (!accessToken) {
-        error = 'No access token received from authentication provider';
-        isLoading = false;
-        return;
-      }
-      
-      if (state !== savedState) {
-        error = 'Invalid state parameter. Please try again.';
-        isLoading = false;
-        return;
-      }
-      
-      // Process the OAuth callback
-      const result = await handleOAuthCallback(provider, accessToken, idToken || undefined);
-      
-      if (!result.success) {
-        error = result.error || 'Authentication failed';
-        isLoading = false;
-        return;
-      }
-      
-      // Show appropriate message
-      if (result.linked) {
-        successMessage = 'Successfully linked your Google account to your existing account!';
-      } else if (result.isNewUser) {
-        successMessage = 'Welcome! Your account has been created.';
-      } else {
-        successMessage = 'Successfully signed in!';
-      }
-      
-      // Update auth state
-      if (result.userId && result.token) {
-        setAuthState(result.userId, '');
-      }
-      
-      // Redirect to home page after a brief delay
-      setTimeout(() => {
+      if (isAuth) {
+        setAuthState('', '');
         goto('/');
-      }, 1500);
-      
+      } else {
+        error = 'Authentication failed. Please try again.';
+        isLoading = false;
+      }
     } catch (err) {
-      error = err instanceof Error ? err.message : 'An unexpected error occurred';
+      error = 'An error occurred during authentication.';
       isLoading = false;
     }
   });
@@ -101,7 +46,7 @@
           <div class="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
           <p class="text-text-muted">Completing sign in...</p>
         </div>
-      {:else if error}
+      {:else}
         <div class="text-danger mb-4">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -117,15 +62,6 @@
         >
           Back to Sign In
         </button>
-      {:else}
-        <div class="text-success mb-4">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <h2 class="text-lg font-semibold mb-2">Success!</h2>
-        </div>
-        <p class="text-text-muted mb-4">{successMessage}</p>
-        <p class="text-sm text-text-muted">Redirecting you...</p>
       {/if}
     </div>
   </div>

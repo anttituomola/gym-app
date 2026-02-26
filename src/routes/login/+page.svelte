@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { signInWithEmail, signUpWithEmail, signInWithGoogle } from '$lib/auth';
+  import { signInWithEmail, signUpWithEmail, signInWithGoogle, checkAuthenticated } from '$lib/auth';
   import { authStore, setAuthState } from '$lib/convex';
   
   let email = '';
@@ -11,16 +11,17 @@
   let isGoogleLoading = false;
   let successMessage = '';
   
-  console.log('[LoginPage] Component loaded');
+  // Check authentication on mount
+  $: checkAuth();
   
-  // Redirect if already authenticated
-  $: if ($authStore.isAuthenticated && !$authStore.isLoading) {
-    console.log('[LoginPage] Already authenticated, redirecting...');
-    goto('/');
+  async function checkAuth() {
+    const isAuth = await checkAuthenticated();
+    if (isAuth) {
+      goto('/');
+    }
   }
   
   async function handleSubmit(event: Event) {
-    console.log('[LoginPage] handleSubmit called');
     event.preventDefault();
     
     if (!email || !password) {
@@ -38,31 +39,18 @@
     isLoading = true;
     
     try {
-      console.log('[LoginPage] Calling auth function...');
       const result = isSignUp 
         ? await signUpWithEmail(email, password)
         : await signInWithEmail(email, password);
       
-      console.log('[LoginPage] Auth result:', result);
-      
       if (!result.success) {
         error = result.error || 'Authentication failed';
       } else {
-        // Show message if account was linked
-        if (result.linked) {
-          successMessage = 'Password added to your existing account!';
-          setTimeout(() => {
-            setAuthState(result.userId || '', email);
-            goto('/');
-          }, 1500);
-        } else {
-          // Update auth state and redirect
-          setAuthState(result.userId || '', email);
-          goto('/');
-        }
+        // Update auth state and redirect
+        setAuthState('', email);
+        goto('/');
       }
     } catch (e) {
-      console.error('[LoginPage] Unexpected error:', e);
       error = 'Unexpected error: ' + (e instanceof Error ? e.message : String(e));
     } finally {
       isLoading = false;
@@ -70,14 +58,13 @@
   }
   
   async function handleGoogleSignIn() {
-    console.log('[LoginPage] Google sign in clicked');
     error = '';
     successMessage = '';
     isGoogleLoading = true;
     
     try {
       await signInWithGoogle();
-      // Page will redirect to Google, then to callback
+      // Page will redirect to Google
     } catch (err) {
       isGoogleLoading = false;
       error = err instanceof Error ? err.message : 'Google sign in failed';
@@ -212,11 +199,6 @@
           {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
         </button>
       </div>
-    </div>
-    
-    <!-- Debug info - remove after fixing -->
-    <div class="mt-4 p-2 text-xs text-text-muted text-center">
-      Debug: Check browser console for logs
     </div>
     
     <!-- Info notice -->
