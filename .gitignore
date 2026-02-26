@@ -1,2 +1,49 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
 
+# Build outputs
+.svelte-kit/
+build/
+dist/
+*.tsbuildinfo
+
+# Environment variables
+.env
 .env.local
+.env.*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Testing
+coverage/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Convex (keep schema and source, ignore generated if any)
+# convex/_generated/  # Uncomment if you want to ignore generated files
