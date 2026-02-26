@@ -9,6 +9,11 @@
   let successMessage = '';
   
   onMount(async () => {
+    console.log('[Callback] Page loaded');
+    console.log('[Callback] Full URL:', window.location.href);
+    console.log('[Callback] Hash:', window.location.hash);
+    console.log('[Callback] Search:', window.location.search);
+    
     try {
       // Get the hash fragment from URL (for implicit flow)
       const hash = window.location.hash;
