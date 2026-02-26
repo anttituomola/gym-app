@@ -18,10 +18,12 @@
   
   $: currentPath = $page.url.pathname;
   $: isLoginPage = currentPath === '/login';
+  $: isAuthCallbackPage = currentPath === '/auth/callback';
+  $: isPublicPage = isLoginPage || isAuthCallbackPage;
   $: hideNav = isLoginPage || $navVisibilityStore.hideMainNav;
   
-  // Redirect to login if not authenticated
-  $: if (!$authStore.isLoading && !$authStore.isAuthenticated && !isLoginPage) {
+  // Redirect to login if not authenticated (skip for public pages)
+  $: if (!$authStore.isLoading && !$authStore.isAuthenticated && !isPublicPage) {
     goto('/login');
   }
   
@@ -50,7 +52,7 @@
           <p>Loading...</p>
         </div>
       </div>
-    {:else if $authStore.isAuthenticated || isLoginPage}
+    {:else if $authStore.isAuthenticated || isPublicPage}
       <slot />
     {/if}
     
