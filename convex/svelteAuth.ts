@@ -2,7 +2,8 @@ import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
-const TOKEN_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days
+const TOKEN_EXPIRY_DEFAULT = 365 * 24 * 60 * 60 * 1000; // 1 year (keep users logged in by default)
+const TOKEN_EXPIRY_SHORT = 7 * 24 * 60 * 60 * 1000; // 7 days (for shared devices)
 
 // Generate secure random token
 function generateToken(): string {
@@ -19,6 +20,7 @@ export const oauthSignIn = mutation({
     email: v.optional(v.string()),
     name: v.optional(v.string()),
     image: v.optional(v.string()),
+    rememberMe: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     // Check if this OAuth account already exists
@@ -37,7 +39,9 @@ export const oauthSignIn = mutation({
       }
       
       const token = generateToken();
-      const expiresAt = Date.now() + TOKEN_EXPIRY;
+      // Use 1 year expiry by default, 7 days if user unchecked "remember me"
+      const tokenExpiry = args.rememberMe === false ? TOKEN_EXPIRY_SHORT : TOKEN_EXPIRY_DEFAULT;
+      const expiresAt = Date.now() + tokenExpiry;
       
       // Delete old tokens
       const oldTokens = await ctx.db
@@ -83,7 +87,9 @@ export const oauthSignIn = mutation({
         
         // Generate token
         const token = generateToken();
-        const expiresAt = Date.now() + TOKEN_EXPIRY;
+        // Use 1 year expiry by default, 7 days if user unchecked "remember me"
+        const tokenExpiry = args.rememberMe === false ? TOKEN_EXPIRY_SHORT : TOKEN_EXPIRY_DEFAULT;
+        const expiresAt = Date.now() + tokenExpiry;
         
         const oldTokens = await ctx.db
           .query("authTokens")
@@ -127,7 +133,9 @@ export const oauthSignIn = mutation({
     
     // Generate token
     const token = generateToken();
-    const expiresAt = Date.now() + TOKEN_EXPIRY;
+    // Use 1 year expiry by default, 7 days if user unchecked "remember me"
+    const tokenExpiry = args.rememberMe === false ? TOKEN_EXPIRY_SHORT : TOKEN_EXPIRY_DEFAULT;
+    const expiresAt = Date.now() + tokenExpiry;
     
     await ctx.db.insert("authTokens", {
       userId,

@@ -2,6 +2,25 @@ import { convex, api } from './convex';
 
 // Custom token-based auth for SvelteKit with Google OAuth
 
+const REMEMBER_ME_KEY = 'auth_remember_me';
+
+export function setRememberMe(remember: boolean): void {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(REMEMBER_ME_KEY, JSON.stringify(remember));
+  }
+}
+
+export function getRememberMe(): boolean {
+  if (typeof localStorage === 'undefined') return true; // Default to true (stay logged in)
+  const stored = localStorage.getItem(REMEMBER_ME_KEY);
+  if (stored === null) return true; // Default to staying logged in
+  try {
+    return JSON.parse(stored);
+  } catch {
+    return true;
+  }
+}
+
 // Generate random state for OAuth
 function generateState(): string {
   const array = new Uint8Array(32);
@@ -53,7 +72,8 @@ export async function signInWithGoogle(): Promise<void> {
 export async function handleOAuthCallback(
   provider: string,
   accessToken: string,
-  idToken?: string
+  idToken?: string,
+  rememberMe: boolean = true
 ): Promise<{ success: boolean; error?: string; token?: string; userId?: string; email?: string; isNewUser?: boolean }> {
   try {
     console.log('[OAuth] Fetching user info with token:', accessToken.substring(0, 20) + '...');
@@ -85,6 +105,7 @@ export async function handleOAuthCallback(
       email: userInfo.email,
       name: userInfo.name,
       image: userInfo.picture,
+      rememberMe,
     });
     
     if (result.token) {

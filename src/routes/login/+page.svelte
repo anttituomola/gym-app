@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { signInWithGoogle, checkAuthenticated, getAuthToken } from '$lib/auth';
+  import { signInWithGoogle, checkAuthenticated, getAuthToken, setRememberMe, getRememberMe } from '$lib/auth';
   import { authStore, setAuthState, convex, api } from '$lib/convex';
   
   let email = '';
@@ -9,6 +9,8 @@
   let error = '';
   let isLoading = false;
   let isGoogleLoading = false;
+  // Default to true - keep users logged in by default
+  let rememberMe = getRememberMe();
   
   // Check auth on mount
   $: checkAuth();
@@ -66,6 +68,9 @@
     error = '';
     isGoogleLoading = true;
     console.log('[Login] Google sign in clicked');
+    
+    // Store remember me preference for the callback
+    setRememberMe(rememberMe);
     
     try {
       // Use custom OAuth flow (cross-origin friendly)
@@ -165,6 +170,16 @@
             <p class="text-xs text-text-muted mt-1">At least 8 characters</p>
           {/if}
         </div>
+        
+        <!-- Keep me logged in checkbox -->
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            bind:checked={rememberMe}
+            class="w-4 h-4 rounded border-surface-light text-primary focus:ring-primary bg-bg"
+          />
+          <span class="text-sm text-text-muted">Keep me logged in</span>
+        </label>
         
         <button
           type="submit"

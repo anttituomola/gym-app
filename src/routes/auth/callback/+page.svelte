@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { handleOAuthCallback } from '$lib/auth';
+  import { handleOAuthCallback, getRememberMe } from '$lib/auth';
   import { setAuthState } from '$lib/convex';
   
   let error = '';
@@ -64,8 +64,9 @@
         return;
       }
       
-      // Process the callback
-      const result = await handleOAuthCallback('google', accessToken);
+      // Process the callback - use rememberMe preference (defaults to true for persistent login)
+      const rememberMe = getRememberMe();
+      const result = await handleOAuthCallback('google', accessToken, undefined, rememberMe);
       
       if (!result.success) {
         error = result.error || 'Authentication failed';
