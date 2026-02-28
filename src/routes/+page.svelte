@@ -41,10 +41,7 @@
         });
       }
       
-      // Check if onboarding is needed
-      needsOnboarding = !profile?.onboardingCompleted;
-      
-      // Load active program
+      // Load active program first (users with existing programs should see them)
       const program = await convex.query(api.programs.getActive, {
         userId: $authStore.userId as any
       });
@@ -60,6 +57,10 @@
           isActive: program.isActive,
         };
       }
+      
+      // Check if onboarding is needed - only if no active program and onboarding not completed
+      // Users with existing programs (from before onboarding) should see their workouts
+      needsOnboarding = !profile?.onboardingCompleted && !activeProgram;
     } catch (err) {
       console.error('Failed to load data:', err);
     } finally {
