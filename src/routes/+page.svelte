@@ -155,6 +155,25 @@
             {/each}
           </div>
         </div>
+        
+        <!-- Create New Program Link -->
+        <a
+          href="/program/new"
+          class="block w-full p-3 bg-primary/10 border border-primary/30 rounded-xl text-left transition-all hover:bg-primary/20 mb-3"
+        >
+          <div class="flex items-center gap-3">
+            <div class="text-xl">🎯</div>
+            <div class="flex-1">
+              <div class="font-medium text-primary text-sm">Create New Program</div>
+              <div class="text-xs text-text-muted">
+                Generate a fresh program with updated preferences
+              </div>
+            </div>
+            <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+        </a>
       {:else}
         <!-- Default Workouts -->
         <div class="grid grid-cols-2 gap-3 mb-3">
@@ -176,6 +195,25 @@
             <span class="text-xs text-white/70">Squat / OHP / Deadlift</span>
           </button>
         </div>
+        
+        <!-- Create Personalized Program -->
+        <a
+          href="/program/new"
+          class="block w-full p-3 bg-primary/10 border border-primary/30 rounded-xl text-left transition-all hover:bg-primary/20 mb-3"
+        >
+          <div class="flex items-center gap-3">
+            <div class="text-xl">✨</div>
+            <div class="flex-1">
+              <div class="font-medium text-primary text-sm">Create Personalized Program</div>
+              <div class="text-xs text-text-muted">
+                Get a custom program based on your goals
+              </div>
+            </div>
+            <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+        </a>
       {/if}
       
       <button
