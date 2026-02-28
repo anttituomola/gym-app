@@ -1,6 +1,5 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { onMount } from 'svelte';
   import { convex, api, authStore } from '$lib/convex';
   import { DEFAULT_WORKOUT_A, DEFAULT_WORKOUT_B } from '$lib/data/exercises';
   import type { TrainingProgram } from '$lib/types';
@@ -12,14 +11,14 @@
   
   // Load profile and active program when user is available
   $effect(() => {
-    if ($authStore.userId && loading) {
+    if ($authStore.userId && loading && !$authStore.isLoading) {
       loadData();
     }
   });
   
-  // Also handle case where auth is already loaded
-  onMount(() => {
-    if (!$authStore.isLoading && loading) {
+  // Handle case where user is not logged in - stop loading after auth is ready
+  $effect(() => {
+    if (!$authStore.isLoading && !$authStore.userId && loading) {
       loading = false;
     }
   });

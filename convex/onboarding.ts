@@ -724,3 +724,153 @@ export const previewStartingWeights = query({
     return weights;
   },
 });
+
+// Create a new training program for existing users (doesn't reset onboarding status)
+export const createNewProgram = mutation({
+  args: {
+    userId: v.id("users"),
+    biometrics: v.object({
+      sex: v.union(v.literal("male"), v.literal("female")),
+      bodyWeight: v.number(),
+      bodyWeightUnit: v.union(v.literal("kg"), v.literal("lbs")),
+      height: v.number(),
+      heightUnit: v.union(v.literal("cm"), v.literal("inches")),
+    }),
+    trainingGoals: v.object({
+      primaryGoal: v.union(v.literal("strength"), v.literal("muscle"), v.literal("weight_loss"), v.literal("general")),
+      experienceLevel: v.union(v.literal("beginner"), v.literal("intermediate"), v.literal("advanced")),
+      timePerWorkout: v.union(v.literal(30), v.literal(45), v.literal(60), v.literal(90)),
+      workoutsPerWeek: v.union(v.literal(2), v.literal(3), v.literal(4), v.literal(5), v.literal(6)),
+    }),
+  },
+  handler: async (ctx, args) => {
+    // Validate biometrics
+    const bioValidation = validateBiometrics(args.biometrics);
+    if (!bioValidation.valid) {
+      throw new Error(`Biometrics validation failed: ${bioValidation.error}`);
+    }
+    
+    // Validate training goals
+    const goalValidation = validateTrainingGoals(args.trainingGoals);
+    if (!goalValidation.valid) {
+      throw new Error(`Training goals validation failed: ${goalValidation.error}`);
+    }
+    
+    // Get user profile
+    const profile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .first();
+    
+    if (!profile) {
+      throw new Error("User profile not found");
+    }
+    
+    // Convert units to metric for storage
+    const bodyWeightKg = args.biometrics.bodyWeightUnit === "lbs" 
+      ? lbsToKg(args.biometrics.bodyWeight) 
+      : args.biometrics.bodyWeight;
+    
+    const heightCm = args.biometrics.heightUnit === "inches"
+      ? inchesToCm(args.biometrics.height)
+      : args.biometrics.height;
+    
+    // Calculate BMI
+    const bmi = calculateBMI(bodyWeightKg, heightCm);
+    
+    // Calculate starting weights
+    const startingWeights = calculateStartingWeights(
+      bodyWeightKg,
+      args.biometrics.sex,
+      args.trainingGoals.experienceLevel,
+      args.trainingGoals.primaryGoal
+    );
+    
+    // Generate program
+    const { workouts, splitType } = generateProgram(
+      { sex: args.biometrics.sex, bodyWeightKg },
+      args.trainingGoals,
+      startingWeights
+    );
+    
+    // Create the training program
+    const programId = await ctx.db.insert("trainingPrograms", {
+      userId: args.userId,
+      name: `${args.trainingGoals.primaryGoal.charAt(0).toUpperCase() + args.trainingGoals.primaryGoal.slice(1)} Program`,
+      description: `${args.trainingGoals.workoutsPerWeek} days/week, ${args.trainingGoals.timePerWorkout} min sessions, ${splitType} split`,
+      isActive: true,
+      workouts: workouts.map(w => ({
+        id: w.id,
+        name: w.name,
+        restBetweenSets: w.restBetweenSets,
+        exercises: w.exercises.map(e => ({
+          exerciseId: e.exerciseId,
+          sets: e.sets,
+          reps: e.reps,
+          startingWeight: e.startingWeight,
+          progression: e.progression,
+          restSeconds: e.restSeconds,
+        })),
+      })),
+    });
+    
+    // Update user profile with new biometrics, goals, and unit preference
+    // But DON'T reset onboarding status - keep user's existing exercise progress
+    const unitPreference: { weightUnit: "kg" | "lbs"; distanceUnit: "cm" | "inches" } = {
+      weightUnit: args.biometrics.bodyWeightUnit,
+      distanceUnit: args.biometrics.heightUnit === "inches" ? "inches" : "cm",
+    };
+    
+    // Only update exercise weights for exercises that don't have current progress
+    // or if the user has never set a weight for them
+    const updatedExercises = { ...profile.exercises };
+    for (const [exerciseId, weight] of Object.entries(startingWeights)) {
+      // Only set starting weight if user hasn't recorded progress for this exercise
+      const existing = updatedExercises[exerciseId];
+      if (existing && existing.successCount === 0 && existing.failureCount === 0) {
+        // User hasn't completed any sets, safe to update starting weight
+        updatedExercises[exerciseId] = {
+          ...existing,
+          currentWeight: weight,
+          weightUnit: unitPreference.weightUnit,
+        };
+      }
+    }
+    
+    await ctx.db.patch(profile._id, {
+      biometrics: {
+        sex: args.biometrics.sex,
+        bodyWeightKg,
+        heightCm,
+        bmi,
+      },
+      trainingGoals: {
+        primaryGoal: args.trainingGoals.primaryGoal,
+        experienceLevel: args.trainingGoals.experienceLevel,
+        timePerWorkout: args.trainingGoals.timePerWorkout,
+        workoutsPerWeek: args.trainingGoals.workoutsPerWeek,
+      },
+      unitPreference,
+      exercises: updatedExercises,
+      activeProgramId: programId,
+    });
+    
+    // Deactivate any existing active programs
+    const existingPrograms = await ctx.db
+      .query("trainingPrograms")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+    
+    for (const p of existingPrograms) {
+      if (p._id !== programId && p.isActive) {
+        await ctx.db.patch(p._id, { isActive: false });
+      }
+    }
+    
+    return {
+      programId,
+      startingWeights,
+      splitType,
+    };
+  },
+});

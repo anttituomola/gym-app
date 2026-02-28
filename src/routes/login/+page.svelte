@@ -12,8 +12,12 @@
   // Default to true - keep users logged in by default
   let rememberMe = getRememberMe();
   
-  // Check auth on mount
-  $: checkAuth();
+  // Check auth on mount - only run once when auth is ready
+  let hasCheckedAuth = false;
+  $: if (!hasCheckedAuth && $authStore.userId) {
+    hasCheckedAuth = true;
+    checkAuth();
+  }
   
   async function checkAuth() {
     const isAuth = await checkAuthenticated();
@@ -24,6 +28,12 @@
   }
   
   async function redirectBasedOnOnboarding() {
+    // Ensure we have a userId before making the call
+    if (!$authStore.userId) {
+      console.error('redirectBasedOnOnboarding called without userId');
+      return;
+    }
+    
     try {
       // Get or create profile to check onboarding status
       const profile = await convex.mutation(api.userProfiles.getOrCreate, {

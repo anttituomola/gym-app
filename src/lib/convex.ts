@@ -42,16 +42,27 @@ export const navVisibilityStore = writable<{
 // Initialize auth state
 export async function initAuth() {
   try {
-    const { checkAuthenticated } = await import('./auth');
+    const { checkAuthenticated, verifyAuthToken } = await import('./auth');
     const isAuth = await checkAuthenticated();
     
     if (isAuth) {
-      authStore.set({
-        isLoading: false,
-        isAuthenticated: true,
-        userId: null,
-        email: '',
-      });
+      // Get user info from token
+      const userInfo = await verifyAuthToken();
+      if (userInfo) {
+        authStore.set({
+          isLoading: false,
+          isAuthenticated: true,
+          userId: userInfo.userId,
+          email: userInfo.email,
+        });
+      } else {
+        authStore.set({
+          isLoading: false,
+          isAuthenticated: false,
+          userId: null,
+          email: null,
+        });
+      }
     } else {
       authStore.set({
         isLoading: false,

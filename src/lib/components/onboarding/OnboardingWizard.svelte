@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import type { BiometricsInput, TrainingGoalsInput, UnitPreference } from '$lib/types';
+  import type { BiometricsInput, TrainingGoalsInput, UnitPreference, UserBiometrics, TrainingGoals } from '$lib/types';
   import { convex, api } from '$lib/convex';
   import ProgressBar from './ProgressBar.svelte';
   import WelcomeStep from './WelcomeStep.svelte';
@@ -11,19 +11,66 @@
 
   interface Props {
     userId: string;
+    mode?: 'onboarding' | 'new-program';
+    initialData?: {
+      biometrics?: UserBiometrics;
+      trainingGoals?: TrainingGoals;
+      unitPreference?: UnitPreference;
+    };
     onComplete?: () => void;
   }
 
-  let { userId, onComplete }: Props = $props();
+  let { userId, mode = 'onboarding', initialData, onComplete }: Props = $props();
+
+  // Convert stored biometrics to input format
+  function convertBiometricsToInput(bio?: UserBiometrics, units?: UnitPreference): Partial<BiometricsInput> {
+    if (!bio) return {};
+    
+    const weightUnit = units?.weightUnit || 'kg';
+    const heightUnit = units?.distanceUnit === 'inches' ? 'inches' : 'cm';
+    
+    // Convert kg to lbs if needed
+    const bodyWeight = weightUnit === 'lbs' 
+      ? Math.round(bio.bodyWeightKg * 2.20462 * 10) / 10
+      : bio.bodyWeightKg;
+    
+    // Convert cm to inches if needed
+    const height = heightUnit === 'inches'
+      ? Math.round(bio.heightCm / 2.54 * 10) / 10
+      : bio.heightCm;
+    
+    return {
+      sex: bio.sex,
+      bodyWeight,
+      bodyWeightUnit: weightUnit,
+      height,
+      heightUnit,
+    };
+  }
+
+  // Convert stored training goals to input format
+  function convertGoalsToInput(goals?: TrainingGoals): Partial<TrainingGoalsInput> {
+    if (!goals) return {};
+    return {
+      primaryGoal: goals.primaryGoal,
+      experienceLevel: goals.experienceLevel,
+      timePerWorkout: goals.timePerWorkout,
+      workoutsPerWeek: goals.workoutsPerWeek,
+    };
+  }
 
   // Steps: 0=Welcome, 1=Biometrics, 2=Goals, 3=Schedule, 4=Preview
-  let currentStep = $state(0);
+  // For new-program mode, skip Welcome step and start at 1
+  let currentStep = $state(mode === 'new-program' ? 1 : 0);
   const totalSteps = 5;
 
-  // Form data
-  let biometrics = $state<Partial<BiometricsInput>>({});
-  let goals = $state<Partial<TrainingGoalsInput>>({});
-  let schedule = $state<Partial<Pick<TrainingGoalsInput, 'timePerWorkout' | 'workoutsPerWeek'>>>({});
+  // Form data - initialize with prefilled data if available
+  let biometrics = $state<Partial<BiometricsInput>>(convertBiometricsToInput(initialData?.biometrics, initialData?.unitPreference));
+  let goals = $state<Partial<TrainingGoalsInput>>(convertGoalsToInput(initialData?.trainingGoals));
+  let schedule = $state<Partial<Pick<TrainingGoalsInput, 'timePerWorkout' | 'workoutsPerWeek'>>>({
+    timePerWorkout: initialData?.trainingGoals?.timePerWorkout,
+    workoutsPerWeek: initialData?.trainingGoals?.workoutsPerWeek,
+  });
 
   // Loading state
   let isSubmitting = $state(false);
@@ -77,11 +124,21 @@
     error = null;
 
     try {
-      const result = await convex.mutation(api.onboarding.completeOnboarding, {
-        userId,
-        biometrics: biometrics as BiometricsInput,
-        trainingGoals: goals as TrainingGoalsInput,
-      });
+      if (mode === 'new-program') {
+        // Create new program without marking onboarding as complete
+        const result = await convex.mutation(api.onboarding.createNewProgram, {
+          userId,
+          biometrics: biometrics as BiometricsInput,
+          trainingGoals: goals as TrainingGoalsInput,
+        });
+      } else {
+        // Complete initial onboarding
+        const result = await convex.mutation(api.onboarding.completeOnboarding, {
+          userId,
+          biometrics: biometrics as BiometricsInput,
+          trainingGoals: goals as TrainingGoalsInput,
+        });
+      }
 
       // Success - redirect to home or workout
       if (onComplete) {
@@ -103,6 +160,15 @@
     'Schedule',
     'Review',
   ];
+
+  // Handle back navigation - in new-program mode on step 1, go home instead of Welcome
+  function handleBack() {
+    if (mode === 'new-program' && currentStep === 1) {
+      goto('/');
+    } else {
+      goToStep(currentStep - 1);
+    }
+  }
 </script>
 
 <div class="min-h-screen bg-bg flex flex-col">
@@ -112,7 +178,7 @@
       <div class="max-w-md mx-auto">
         <div class="flex items-center gap-3 mb-4">
           <button
-            onclick={() => goToStep(currentStep - 1)}
+            onclick={handleBack}
             class="p-2 -ml-2 hover:bg-surface-light rounded-lg transition-colors"
             aria-label="Go back"
           >
@@ -151,7 +217,7 @@
         <BiometricsStep
           initialData={biometrics}
           onSubmit={handleBiometricsSubmit}
-          onBack={() => goToStep(0)}
+          onBack={handleBack}
         />
       {:else if currentStep === 2}
         <GoalsStep
