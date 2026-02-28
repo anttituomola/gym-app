@@ -154,13 +154,25 @@ export async function verifyAuthToken(): Promise<{ userId: string; email: string
   const token = getAuthToken();
   if (!token) return null;
   
+  // First try the custom svelteAuth token verification (for Google OAuth)
   try {
     const user = await convex.query(api.svelteAuth.verifyToken, { token });
     if (user) {
       return { userId: user._id, email: user.email || '' };
     }
   } catch (err) {
-    console.error('Token verification failed:', err);
+    // Continue to try @convex-dev/auth
+  }
+  
+  // Try @convex-dev/auth JWT token verification (for password auth)
+  // The JWT from @convex-dev/auth is stored, decode and verify it
+  try {
+    const user = await convex.query(api.authCheck.verifyJwtToken, { token });
+    if (user) {
+      return { userId: user._id, email: user.email || '' };
+    }
+  } catch (err) {
+    console.error('JWT verification failed:', err);
   }
   
   return null;

@@ -7,22 +7,26 @@
   import { onMount } from 'svelte';
   import { convex, api, authStore } from '$lib/convex';
   
-  let profile: any = null;
-  let loading = true;
+  let profile: any = $state(null);
+  let loading = $state(true);
   
   // Local state that syncs with profile
-  let exerciseSettings: Record<string, UserExerciseSettings> = {};
-  let selectedEquipment: string[] = [];
-  let editingExercise: string | null = null;
-  let editingIncrement: string | null = null;
-  let importStatus: 'idle' | 'success' | 'error' = 'idle';
-  let importMessage = '';
-  let equipmentSaveStatus: 'idle' | 'saving' | 'saved' = 'idle';
+  let exerciseSettings: Record<string, UserExerciseSettings> = $state({});
+  let selectedEquipment: string[] = $state([]);
+  let editingExercise: string | null = $state(null);
+  let editingIncrement: string | null = $state(null);
+  let importStatus: 'idle' | 'success' | 'error' = $state('idle');
+  let importMessage = $state('');
+  let equipmentSaveStatus: 'idle' | 'saving' | 'saved' = $state('idle');
+  let unitSaveStatus: 'idle' | 'saving' | 'saved' = $state('idle');
+  let unitPreference = $state({ weightUnit: 'kg' as 'kg' | 'lbs', distanceUnit: 'cm' as 'cm' | 'inches' });
   
   // Load profile when user is available
-  $: if ($authStore.userId && loading) {
-    loadProfile();
-  }
+  $effect(() => {
+    if ($authStore.userId && loading) {
+      loadProfile();
+    }
+  });
   
   async function loadProfile() {
     if (!$authStore.userId) return;
@@ -45,6 +49,9 @@
       if (profile) {
         exerciseSettings = profile.exercises || {};
         selectedEquipment = profile.gymEquipment || [];
+        if (profile.unitPreference) {
+          unitPreference = profile.unitPreference;
+        }
       }
     } catch (err) {
       console.error('Failed to load profile:', err);
@@ -179,6 +186,34 @@
   
   function formatEquipmentName(name: string): string {
     return name.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  }
+  
+  async function updateUnitPreference(weightUnit: 'kg' | 'lbs') {
+    if (!$authStore.userId) return;
+    
+    const newPreference = {
+      weightUnit,
+      distanceUnit: weightUnit === 'kg' ? 'cm' : 'inches',
+    };
+    
+    unitPreference = newPreference;
+    unitSaveStatus = 'saving';
+    
+    try {
+      await convex.mutation(api.userProfiles.updateUnitPreference, {
+        userId: $authStore.userId as any,
+        unitPreference: newPreference,
+      });
+      unitSaveStatus = 'saved';
+      setTimeout(() => {
+        if (unitSaveStatus === 'saved') {
+          unitSaveStatus = 'idle';
+        }
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to save unit preference:', err);
+      unitSaveStatus = 'idle';
+    }
   }
   
   async function handleImport(data: {
@@ -469,6 +504,43 @@
           </button>
         {/each}
       </div>
+    </section>
+    
+    <!-- Unit Preference -->
+    <section class="bg-surface rounded-xl p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold">Units</h2>
+        {#if unitSaveStatus === 'saving'}
+          <span class="text-xs text-text-muted">Saving...</span>
+        {:else if unitSaveStatus === 'saved'}
+          <span class="text-xs text-success">Saved ✓</span>
+        {/if}
+      </div>
+      <p class="text-sm text-text-muted mb-3">Choose your preferred units for weights and measurements</p>
+      
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm font-medium mb-2">Weight Display</label>
+          <div class="flex bg-surface-light rounded-lg p-1">
+            <button
+              on:click={() => updateUnitPreference('kg')}
+              class="flex-1 px-4 py-2 text-sm rounded-md transition-all {unitPreference.weightUnit === 'kg' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'}"
+            >
+              Kilograms (kg)
+            </button>
+            <button
+              on:click={() => updateUnitPreference('lbs')}
+              class="flex-1 px-4 py-2 text-sm rounded-md transition-all {unitPreference.weightUnit === 'lbs' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'}"
+            >
+              Pounds (lbs)
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      <p class="text-xs text-text-muted mt-3">
+        Changing units only affects how weights are displayed. Your workout data is always stored in kilograms.
+      </p>
     </section>
     
     <!-- About -->

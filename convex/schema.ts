@@ -45,6 +45,49 @@ export default defineSchema({
     ),
     gymEquipment: v.array(v.string()),
     activeProgramId: v.optional(v.id("trainingPrograms")),
+    
+    // Onboarding and biometrics
+    biometrics: v.optional(v.object({
+      sex: v.union(v.literal("male"), v.literal("female")),
+      bodyWeightKg: v.number(),
+      heightCm: v.number(),
+      bmi: v.optional(v.number()),
+    })),
+    
+    trainingGoals: v.optional(v.object({
+      primaryGoal: v.union(
+        v.literal("strength"),
+        v.literal("muscle"),
+        v.literal("weight_loss"),
+        v.literal("general")
+      ),
+      experienceLevel: v.union(
+        v.literal("beginner"),
+        v.literal("intermediate"),
+        v.literal("advanced")
+      ),
+      timePerWorkout: v.union(
+        v.literal(30),
+        v.literal(45),
+        v.literal(60),
+        v.literal(90)
+      ),
+      workoutsPerWeek: v.union(
+        v.literal(2),
+        v.literal(3),
+        v.literal(4),
+        v.literal(5),
+        v.literal(6)
+      ),
+    })),
+    
+    unitPreference: v.optional(v.object({
+      weightUnit: v.union(v.literal("kg"), v.literal("lbs")),
+      distanceUnit: v.union(v.literal("cm"), v.literal("inches")),
+    })),
+    
+    onboardingCompleted: v.optional(v.boolean()),
+    onboardingCompletedAt: v.optional(v.number()),
   })
     .index("by_user", ["userId"]),
 

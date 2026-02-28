@@ -9,9 +9,13 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as authCheck from "../authCheck.js";
+import type * as clearAuth from "../clearAuth.js";
+import type * as clearData from "../clearData.js";
 import type * as exercises from "../exercises.js";
 import type * as http from "../http.js";
 import type * as import_ from "../import.js";
+import type * as onboarding from "../onboarding.js";
 import type * as programs from "../programs.js";
 import type * as svelteAuth from "../svelteAuth.js";
 import type * as userProfiles from "../userProfiles.js";
@@ -26,9 +30,13 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  authCheck: typeof authCheck;
+  clearAuth: typeof clearAuth;
+  clearData: typeof clearData;
   exercises: typeof exercises;
   http: typeof http;
   import: typeof import_;
+  onboarding: typeof onboarding;
   programs: typeof programs;
   svelteAuth: typeof svelteAuth;
   userProfiles: typeof userProfiles;

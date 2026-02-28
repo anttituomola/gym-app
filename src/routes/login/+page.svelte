@@ -1,11 +1,11 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { signInWithGoogle, checkAuthenticated, getAuthToken, setRememberMe, getRememberMe } from '$lib/auth';
+  import { signInWithGoogle, checkAuthenticated, verifyAuthToken, getAuthToken, setRememberMe, getRememberMe } from '$lib/auth';
   import { authStore, setAuthState, convex, api } from '$lib/convex';
   
   let email = '';
   let password = '';
-  let isSignUp = false;
+
   let error = '';
   let isLoading = false;
   let isGoogleLoading = false;
@@ -18,6 +18,26 @@
   async function checkAuth() {
     const isAuth = await checkAuthenticated();
     if (isAuth) {
+      // Check if user needs onboarding
+      await redirectBasedOnOnboarding();
+    }
+  }
+  
+  async function redirectBasedOnOnboarding() {
+    try {
+      // Get or create profile to check onboarding status
+      const profile = await convex.mutation(api.userProfiles.getOrCreate, {
+        userId: $authStore.userId as any,
+      });
+      
+      if (!profile.onboardingCompleted) {
+        goto('/onboarding');
+      } else {
+        goto('/');
+      }
+    } catch (err) {
+      console.error('Failed to check onboarding status:', err);
+      // Default to home if error
       goto('/');
     }
   }
@@ -39,27 +59,78 @@
     isLoading = true;
     
     try {
-      // Use Convex Auth for password
-      const result = await convex.action(api.auth.signIn, {
+      // Try to sign in first
+      console.log(`[Login] Attempting sign in for ${email}`);
+      
+      let result = await convex.action(api.auth.signIn, {
         provider: 'password',
         params: {
-          flow: isSignUp ? 'signUp' : 'signIn',
+          flow: 'signIn',
           email,
           password,
         },
       });
       
-      // Convex Auth uses cookies, check if authenticated
-      const isAuth = await checkAuthenticated();
-      if (isAuth) {
-        setAuthState('', email);
-        goto('/');
-      } else {
-        error = 'Authentication failed';
+      console.log('[Login] signIn result:', result);
+      
+      // Store the token from successful sign in
+      if (result.tokens?.token) {
+        localStorage.setItem('authToken', result.tokens.token);
+        console.log('[Login] Token stored from sign in');
       }
+      
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Authentication failed';
-    } finally {
+      const errorMsg = e instanceof Error ? e.message : '';
+      console.log('[Login] Sign in error:', errorMsg);
+      
+      // If account doesn't exist, try to create it
+      if (errorMsg.includes('InvalidAccountId')) {
+        console.log(`[Login] Account not found, creating new account for ${email}`);
+        try {
+          const signUpResult = await convex.action(api.auth.signIn, {
+            provider: 'password',
+            params: {
+              flow: 'signUp',
+              email,
+              password,
+            },
+          });
+          console.log('[Login] Sign up result:', signUpResult);
+          
+          // Store the token from successful sign up
+          if (signUpResult.tokens?.token) {
+            localStorage.setItem('authToken', signUpResult.tokens.token);
+            console.log('[Login] Token stored from sign up');
+          }
+        } catch (signUpError) {
+          console.error('[Login] Sign up error:', signUpError);
+          throw signUpError;
+        }
+      } else if (errorMsg.includes('InvalidSecret')) {
+        error = 'Incorrect password. Please try again.';
+        isLoading = false;
+        return;
+      } else {
+        throw e;
+      }
+    }
+    
+    // Check if authentication succeeded
+    const isAuth = await checkAuthenticated();
+    console.log('[Login] checkAuthenticated:', isAuth);
+    
+    if (isAuth) {
+      // Get user info to set auth state properly
+      const userInfo = await verifyAuthToken();
+      if (userInfo) {
+        setAuthState(userInfo.userId, userInfo.email);
+        await redirectBasedOnOnboarding();
+      } else {
+        error = 'Failed to get user info';
+        isLoading = false;
+      }
+    } else {
+      error = 'Authentication failed';
       isLoading = false;
     }
   }
@@ -76,6 +147,7 @@
       // Use custom OAuth flow (cross-origin friendly)
       await signInWithGoogle();
       // Page will redirect to Google, then to callback
+      // Callback will handle onboarding check
     } catch (err) {
       console.error('[Login] Google sign in error:', err);
       isGoogleLoading = false;
@@ -83,14 +155,11 @@
     }
   }
   
-  function toggleMode() {
-    isSignUp = !isSignUp;
-    error = '';
-  }
+
 </script>
 
 <svelte:head>
-  <title>{isSignUp ? 'Sign Up' : 'Sign In'} - LiftLog</title>
+  <title>Sign In - LiftLog</title>
 </svelte:head>
 
 <div class="min-h-screen flex items-center justify-center p-4 bg-bg">
@@ -104,9 +173,7 @@
     
     <!-- Form -->
     <div class="bg-surface rounded-2xl p-6 shadow-xl">
-      <h2 class="text-xl font-semibold mb-4">
-        {isSignUp ? 'Create Account' : 'Welcome Back'}
-      </h2>
+      <h2 class="text-xl font-semibold mb-4">Welcome Back</h2>
       
       {#if error}
         <div class="bg-danger/20 text-danger rounded-lg p-3 mb-4 text-sm">
@@ -166,9 +233,7 @@
             class="w-full bg-bg border border-surface-light rounded-xl px-4 py-3 focus:outline-none focus:border-primary"
             required
           />
-          {#if isSignUp}
-            <p class="text-xs text-text-muted mt-1">At least 8 characters</p>
-          {/if}
+          <p class="text-xs text-text-muted mt-1">At least 8 characters</p>
         </div>
         
         <!-- Keep me logged in checkbox -->
@@ -187,21 +252,14 @@
           class="w-full bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-all rounded-xl p-4 font-semibold mt-2"
         >
           {#if isLoading}
-            <span class="animate-pulse">{isSignUp ? 'Creating account...' : 'Signing in...'}</span>
+            <span class="animate-pulse">Continue...</span>
           {:else}
-            {isSignUp ? 'Sign Up' : 'Sign In'}
+            Continue
           {/if}
         </button>
       </form>
       
-      <div class="mt-6 text-center">
-        <button
-          on:click={toggleMode}
-          class="text-text-muted hover:text-text text-sm"
-        >
-          {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
-        </button>
-      </div>
+
     </div>
     
     <!-- Info notice -->

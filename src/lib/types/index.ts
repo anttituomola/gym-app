@@ -124,6 +124,47 @@ export interface UserProfile {
   exercises: Record<string, UserExerciseSettings>;
   gymEquipment: string[];
   activeProgramId?: string;
+  biometrics?: UserBiometrics;
+  trainingGoals?: TrainingGoals;
+  unitPreference?: UnitPreference;
+  onboardingCompleted?: boolean;
+  onboardingCompletedAt?: number;
+}
+
+// Onboarding types
+export interface UserBiometrics {
+  sex: 'male' | 'female';
+  bodyWeightKg: number;
+  heightCm: number;
+  bmi?: number;
+}
+
+export interface TrainingGoals {
+  primaryGoal: 'strength' | 'muscle' | 'weight_loss' | 'general';
+  experienceLevel: 'beginner' | 'intermediate' | 'advanced';
+  timePerWorkout: 30 | 45 | 60 | 90;
+  workoutsPerWeek: 2 | 3 | 4 | 5 | 6;
+}
+
+export interface UnitPreference {
+  weightUnit: 'kg' | 'lbs';
+  distanceUnit: 'cm' | 'inches';
+}
+
+// Input types for forms (with display units)
+export interface BiometricsInput {
+  sex: 'male' | 'female';
+  bodyWeight: number;
+  bodyWeightUnit: 'kg' | 'lbs';
+  height: number;
+  heightUnit: 'cm' | 'inches';
+}
+
+export interface TrainingGoalsInput {
+  primaryGoal: 'strength' | 'muscle' | 'weight_loss' | 'general';
+  experienceLevel: 'beginner' | 'intermediate' | 'advanced';
+  timePerWorkout: 30 | 45 | 60 | 90;
+  workoutsPerWeek: 2 | 3 | 4 | 5 | 6;
 }
 
 // Equipment list
