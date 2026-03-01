@@ -205,6 +205,52 @@ export const cancel = mutation({
   },
 });
 
+// Save a completed workout (from localStorage/local state)
+export const saveCompleted = mutation({
+  args: {
+    userId: v.id("users"),
+    workoutType: v.string(),
+    plan: v.array(
+      v.object({
+        exerciseId: v.string(),
+        sets: v.number(),
+        reps: v.number(),
+        weight: v.number(),
+      })
+    ),
+    sets: v.array(
+      v.object({
+        id: v.string(),
+        exerciseId: v.string(),
+        setNumber: v.number(),
+        type: v.union(v.literal("warmup"), v.literal("work")),
+        targetReps: v.number(),
+        targetWeight: v.number(),
+        targetTimeSeconds: v.optional(v.number()),
+        completedReps: v.optional(v.number()),
+        completedTimeSeconds: v.optional(v.number()),
+        completedAt: v.optional(v.number()),
+        failed: v.boolean(),
+        skipped: v.optional(v.boolean()),
+      })
+    ),
+    completedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const workoutId = await ctx.db.insert("workouts", {
+      userId: args.userId,
+      startedAt: args.completedAt - 3600000, // Estimate start time (1 hour before completion)
+      completedAt: args.completedAt,
+      status: "completed",
+      plan: args.plan,
+      sets: args.sets,
+      currentSetIndex: args.sets.length,
+    });
+
+    return await ctx.db.get(workoutId);
+  },
+});
+
 // Modify workout with LLM
 export const modify = mutation({
   args: {

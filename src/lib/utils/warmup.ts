@@ -1,8 +1,6 @@
 import type { WorkoutSet } from '$lib/types';
 import { getExerciseById } from '$lib/data/exercises';
-
-const BAR_WEIGHT = 20; // kg
-const MIN_PLATE = 2.5; // kg (smallest plate on each side)
+import { BAR_WEIGHT, roundToAchievableWeight } from './plates';
 
 export function calculateWarmupSets(exerciseId: string, workWeight: number): WorkoutSet[] {
   const exercise = getExerciseById(exerciseId);
@@ -18,13 +16,13 @@ export function calculateWarmupSets(exerciseId: string, workWeight: number): Wor
       // Empty bar
       weight = BAR_WEIGHT;
     } else {
-      // Calculate percentage and round to nearest plate increment
+      // Calculate percentage and round to achievable weight with available plates
       const rawWeight = workWeight * step.percentOfWork;
-      weight = Math.round(rawWeight / (MIN_PLATE * 2)) * (MIN_PLATE * 2);
+      weight = roundToAchievableWeight(rawWeight);
     }
 
     // Only add if weight is less than work weight and not duplicate
-    if (weight < workWeight - MIN_PLATE && !sets.find(s => s.targetWeight === weight)) {
+    if (weight < workWeight && !sets.find(s => s.targetWeight === weight)) {
       sets.push({
         id: `${exerciseId}-warmup-${setNumber}`,
         exerciseId,

@@ -149,9 +149,12 @@ export default defineSchema({
         type: v.union(v.literal("warmup"), v.literal("work")),
         targetReps: v.number(),
         targetWeight: v.number(),
+        targetTimeSeconds: v.optional(v.number()),
         completedReps: v.optional(v.number()),
+        completedTimeSeconds: v.optional(v.number()),
         completedAt: v.optional(v.number()),
         failed: v.boolean(),
+        skipped: v.optional(v.boolean()),
       })
     ),
     currentSetIndex: v.number(),

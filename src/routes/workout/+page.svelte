@@ -6,8 +6,10 @@
   import type { WorkoutSet, PlannedExercise, UserExerciseSettings } from '$lib/types';
   import type { ModificationResponse } from '$lib/types/ai';
   import { generateAllSets } from '$lib/utils/warmup';
+  import { roundToAchievableWeight, getPlateBreakdown } from '$lib/utils/plates';
   import { navVisibilityStore, convex, api, authStore } from '$lib/convex';
   import { aiSettingsStore, aiAvailable } from '$lib/stores/aiSettings';
+  import { restTimer, formattedRestTime } from '$lib/stores/restTimer';
   import WorkoutModificationModal from '$lib/components/WorkoutModificationModal.svelte';
   
   // Demo user data - will come from Convex
@@ -48,34 +50,7 @@
   const STORAGE_KEY = 'ongoingWorkout';
   let saveInterval: ReturnType<typeof setInterval> | null = null;
   
-  // Rest timer
-  let restEndTime: number | null = null;
-  let restRemaining = 0;
-  let restInterval: ReturnType<typeof setInterval> | null = null;
-  let restSoundPlayed = false;
-  const REST_TIME_SUCCESS = 180; // 3 minutes in seconds
-  const REST_TIME_FAILURE = 300; // 5 minutes in seconds
-  
-  // Audio for rest timer completion
-  function playRestCompleteSound() {
-    const audio = new Audio('data:audio/wav;base64,UklGRl9vT1BXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU');
-    // Create a simple beep using AudioContext for better browser support
-    try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const oscillator = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-      oscillator.frequency.value = 800;
-      oscillator.type = 'sine';
-      gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
-      oscillator.start(audioCtx.currentTime);
-      oscillator.stop(audioCtx.currentTime + 0.5);
-    } catch (e) {
-      // Audio not supported
-    }
-  }
+  // Rest timer is now managed globally via restTimer store
   
   // Audio for timer-based exercise completion (higher pitch ping)
   function playTimerCompleteSound() {
@@ -100,6 +75,9 @@
   let completedRepsCount = 0;
   let tapCount = 0;
   let setIsComplete = false;
+  let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  const LONG_PRESS_DURATION = 500; // ms
   
   // Timer-based exercise state
   let exerciseTimerRemaining = 0;
@@ -113,11 +91,24 @@
     : [];
   $: currentExerciseSetIndex = exerciseSets.findIndex(s => s.completedReps === undefined && s.completedTimeSeconds === undefined);
   $: currentSet = currentExerciseSetIndex >= 0 ? exerciseSets[currentExerciseSetIndex] : null;
+
   $: currentExercise = currentSet ? getExerciseById(currentSet.exerciseId) : null;
   
   // Check if current exercise uses bodyweight progression (rep-based instead of weight-based)
   $: useBodyweightProgression = currentExercise?.supportsBodyweightProgression && 
     defaultWeights[currentExercise.id]?.useBodyweightProgression;
+  
+  // Workout complete stats - calculated reactively
+  $: completedSetsCount = sets.filter(s => s.completedReps !== undefined || s.completedTimeSeconds !== undefined).length;
+  $: totalSetsCount = sets.length;
+  $: totalVolumeLifted = sets.reduce((sum, s) => {
+    if (s.completedReps && s.targetWeight > 0) {
+      return sum + (s.completedReps * s.targetWeight);
+    }
+    return sum;
+  }, 0);
+  $: workSetsCompletedCount = sets.filter(s => s.type === 'work' && (s.completedReps !== undefined || s.completedTimeSeconds !== undefined)).length;
+  $: workSetsTotalCount = sets.filter(s => s.type === 'work').length;
   
   onMount(async () => {
     // Initialize AI settings
@@ -156,13 +147,9 @@
         }
         if (profile?.gymEquipment) {
           userEquipment = profile.gymEquipment;
-          console.log('Loaded user equipment:', userEquipment);
-        } else {
-          console.log('No gym equipment found in profile, using defaults');
         }
       } catch (e) {
         // Use default weights if profile not available
-        console.log('Could not load profile, using defaults');
       }
     }
     
@@ -182,12 +169,19 @@
             const exerciseData = getExerciseById(ex.exerciseId);
             const isTimeBased = exerciseData?.isTimeBased;
             const useBodyweightProgression = exerciseData?.supportsBodyweightProgression && settings?.useBodyweightProgression;
+            const isBarbell = exerciseData?.equipment.includes('barbell');
+            
+            let weight = useBodyweightProgression ? 0 : (ex.startingWeight ?? settings?.currentWeight ?? 20);
+            // Round barbell weights to achievable plate combinations
+            if (isBarbell && weight > 20) {
+              weight = roundToAchievableWeight(weight);
+            }
             
             return {
               exerciseId: ex.exerciseId,
               sets: ex.sets,
               reps: isTimeBased ? 0 : (useBodyweightProgression ? (settings?.targetReps || exerciseData?.defaultReps || ex.reps) : ex.reps),
-              weight: useBodyweightProgression ? 0 : (ex.startingWeight ?? settings?.currentWeight ?? 20),
+              weight,
               timeSeconds: isTimeBased ? (exerciseData?.defaultTimeSeconds || 60) : undefined,
             };
           });
@@ -214,12 +208,19 @@
         const exerciseData = getExerciseById(id);
         const isTimeBased = exerciseData?.isTimeBased;
         const useBodyweightProgression = exerciseData?.supportsBodyweightProgression && settings?.useBodyweightProgression;
+        const isBarbell = exerciseData?.equipment.includes('barbell');
+        
+        let weight = useBodyweightProgression ? 0 : (settings?.currentWeight || 20);
+        // Round barbell weights to achievable plate combinations
+        if (isBarbell && weight > 20) {
+          weight = roundToAchievableWeight(weight);
+        }
         
         return {
           exerciseId: id,
           sets: id === 'deadlift' ? 1 : 3,
           reps: isTimeBased ? 0 : (useBodyweightProgression ? (settings?.targetReps || exerciseData?.defaultReps || 5) : 5),
-          weight: useBodyweightProgression ? 0 : (settings?.currentWeight || 20),
+          weight,
           timeSeconds: isTimeBased ? (exerciseData?.defaultTimeSeconds || 60) : undefined,
         };
       });
@@ -246,7 +247,7 @@
   }
   
   onDestroy(() => {
-    if (restInterval) clearInterval(restInterval);
+    // Note: restTimer is global and persists across navigation
     if (exerciseTimerInterval) clearInterval(exerciseTimerInterval);
     navVisibilityStore.set({ hideMainNav: false });
   });
@@ -254,12 +255,26 @@
   // Track the current set ID to detect actual set changes
   let lastSetId: string | null = null;
   
+  // Reference to timeline scroll container for auto-scrolling
+  let timelineContainer: HTMLDivElement | null = null;
+  
   // Reset counters when set changes
   $: if (currentSet && viewMode === 'exercise' && currentSet.id !== lastSetId) {
     lastSetId = currentSet.id;
     completedRepsCount = currentSet.targetReps;
     tapCount = 0;
     setIsComplete = false;
+
+    // Clear any pending save debounce
+    if (saveDebounceTimer) {
+      clearTimeout(saveDebounceTimer);
+      saveDebounceTimer = null;
+    }
+    // Clear any pending long press
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
     // Reset timer state
     timerCompleted = false;
     isTimerRunning = false;
@@ -273,6 +288,16 @@
     } else {
       exerciseTimerRemaining = 0;
     }
+    
+    // Auto-scroll timeline to show current set with future sets visible
+    if (timelineContainer && currentExerciseSetIndex >= 0) {
+      // Each circle is w-10 (40px) + gap-2 (8px) = 48px
+      const itemWidth = 48;
+      // Calculate scroll position: center the current item but bias toward showing future sets
+      // Scroll so current item is at 1/3 of the visible width
+      const scrollPosition = (currentExerciseSetIndex * itemWidth) - (timelineContainer.clientWidth / 3);
+      timelineContainer.scrollTo({ left: Math.max(0, scrollPosition), behavior: 'smooth' });
+    }
   }
   
   function startExercise(exerciseId: string) {
@@ -285,11 +310,7 @@
     if (!currentSet || !currentSet.targetTimeSeconds) return;
     
     // Clear any running rest timer - user is skipping rest to start exercise
-    if (restInterval) {
-      clearInterval(restInterval);
-      restInterval = null;
-    }
-    restEndTime = null;
+    restTimer.skip();
     
     isTimerRunning = true;
     timerCompleted = false;
@@ -341,24 +362,29 @@
         : s
     );
     
-    // Start rest timer
-    startRest(isFailure);
-    
-    // If exercise is complete, go back to overview after a delay
+    // Check if this is the last set of the exercise
     const remainingSets = exerciseSets.filter(s => s.id !== currentSet!.id && s.completedReps === undefined && s.completedTimeSeconds === undefined);
     if (remainingSets.length === 0) {
+      // Last set - go back to overview after showing completion briefly
       setTimeout(() => backToOverview(), 1500);
+      return;
     }
+    
+    // Not the last set - start rest timer
+    startRest(isFailure);
   }
   
   function backToOverview() {
     viewMode = 'overview';
     activeExerciseId = null;
     navVisibilityStore.set({ hideMainNav: false });
-    if (restInterval) clearInterval(restInterval);
+    restTimer.skip();
     if (exerciseTimerInterval) clearInterval(exerciseTimerInterval);
-    restEndTime = null;
+    if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+    if (longPressTimer) clearTimeout(longPressTimer);
     isTimerRunning = false;
+    saveDebounceTimer = null;
+    longPressTimer = null;
     lastSetId = null;
   }
   
@@ -389,22 +415,42 @@
   }
   
   function startRest(isFailure: boolean) {
-    const restTime = isFailure ? REST_TIME_FAILURE : REST_TIME_SUCCESS;
-    restEndTime = Date.now() + restTime * 1000;
-    restRemaining = restTime;
-    restSoundPlayed = false;
+    restTimer.start(isFailure);
+  }
+  
+  function handleExtraRepComplete() {
+    if (!currentSet) return;
     
-    if (restInterval) clearInterval(restInterval);
-    restInterval = setInterval(() => {
-      if (restEndTime) {
-        restRemaining = Math.ceil((restEndTime - Date.now()) / 1000);
-        // Play sound when timer reaches zero (goes negative)
-        if (restRemaining < 0 && !restSoundPlayed) {
-          restSoundPlayed = true;
-          playRestCompleteSound();
-        }
-      }
-    }, 100);
+    // Check if this is the last set of the exercise
+    const remainingSets = exerciseSets.filter(s => s.id !== currentSet!.id && s.completedReps === undefined && s.completedTimeSeconds === undefined);
+    const isLastSet = remainingSets.length === 0;
+    
+    if (isLastSet) {
+      // Last set - save and go back to overview immediately, no rest
+      sets = sets.map((s) => 
+        s.id === currentSet!.id 
+          ? { ...s, completedReps: completedRepsCount, completedAt: Date.now(), failed: false }
+          : s
+      );
+      setTimeout(() => backToOverview(), 500);
+      return;
+    }
+    
+    // Not last set - start rest timer immediately (extra reps = success)
+    startRest(false);
+    
+    // Clear existing debounce timer and set new one for saving
+    if (saveDebounceTimer) {
+      clearTimeout(saveDebounceTimer);
+    }
+    
+    saveDebounceTimer = setTimeout(() => {
+      sets = sets.map((s) => 
+        s.id === currentSet!.id 
+          ? { ...s, completedReps: completedRepsCount, completedAt: Date.now(), failed: false }
+          : s
+      );
+    }, 5000);
   }
   
   function handleCircleTap() {
@@ -423,36 +469,90 @@
       }
     }
     
-    // For warmup sets, save and move to next immediately (no rest)
+    const isFailure = completedRepsCount < currentSet.targetReps;
+    setIsComplete = true;
+    
+    // Check if this is the last set of the exercise
+    const remainingSets = exerciseSets.filter(s => s.id !== currentSet!.id && s.completedReps === undefined && s.completedTimeSeconds === undefined);
+    const isLastSet = remainingSets.length === 0;
+    
+    if (isLastSet) {
+      // Last set - save and go back to overview immediately, no rest
+      sets = sets.map((s) => 
+        s.id === currentSet!.id 
+          ? { ...s, completedReps: completedRepsCount, completedAt: Date.now(), failed: isFailure }
+          : s
+      );
+      setTimeout(() => backToOverview(), 500);
+      return;
+    }
+    
+    // For warmup sets, save immediately
     if (currentSet.type === 'warmup') {
       sets = sets.map((s) => 
         s.id === currentSet!.id 
-          ? { ...s, completedReps: completedRepsCount, completedAt: Date.now(), failed: false }
+          ? { ...s, completedReps: completedRepsCount, completedAt: Date.now(), failed: isFailure }
           : s
       );
       
-      // Check if exercise is complete
-      const remainingSets = exerciseSets.filter(s => s.id !== currentSet!.id && s.completedReps === undefined);
-      if (remainingSets.length === 0) {
-        setTimeout(() => backToOverview(), 500);
+      // Check if this was the last warmup (next set is work set)
+      // We need to check the array BEFORE the state updates, so use the current exerciseSets
+      const currentSetIndex = exerciseSets.findIndex(s => s.id === currentSet!.id);
+      const nextSet = exerciseSets[currentSetIndex + 1];
+      if (nextSet && nextSet.type === 'work') {
+        // This was the last warmup - set flag so reset block doesn't clear rest timer
+        lastSetId = nextSet.id;
+        // Reset setIsComplete so next set doesn't appear done
+        setIsComplete = false;
+        completedRepsCount = nextSet.targetReps;
+        tapCount = 0;
+        // Start rest timer immediately after last warmup
+        startRest(false);
       }
       return;
     }
     
-    // For work sets, start/restart rest timer
-    const isFailure = completedRepsCount < currentSet.targetReps;
+    // For work sets: start/restart rest timer immediately on every tap
+    // This gives immediate feedback while still allowing rep adjustments
     startRest(isFailure);
-    setIsComplete = true;
+    
+    // Clear existing debounce timer
+    if (saveDebounceTimer) {
+      clearTimeout(saveDebounceTimer);
+    }
+    
+    // Set new debounce timer - save after 5 seconds of no taps
+    saveDebounceTimer = setTimeout(() => {
+      const finalIsFailure = completedRepsCount < currentSet.targetReps;
+      sets = sets.map((s) => 
+        s.id === currentSet!.id 
+          ? { ...s, completedReps: completedRepsCount, completedAt: Date.now(), failed: finalIsFailure }
+          : s
+      );
+      // Check if this is the last set - if so, go back to overview
+      const remainingSets = exerciseSets.filter(s => s.completedReps === undefined && s.completedTimeSeconds === undefined);
+      if (remainingSets.length === 0) {
+        setTimeout(() => backToOverview(), 500);
+      }
+    }, 5000);
   }
   
-  function saveAndNextSet() {
-    if (!currentSet || !setIsComplete) return;
+  function finalizeSetAndSave() {
+    if (!currentSet) return;
     
-    // For time-based exercises, saving is handled in completeTimerSet
-    if (currentSet.targetTimeSeconds) return;
+    // Clear any pending debounce
+    if (saveDebounceTimer) {
+      clearTimeout(saveDebounceTimer);
+      saveDebounceTimer = null;
+    }
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
     
     const isFailure = completedRepsCount < currentSet.targetReps;
     
+    // Save immediately
     sets = sets.map((s) => 
       s.id === currentSet!.id 
         ? { ...s, completedReps: completedRepsCount, completedAt: Date.now(), failed: isFailure }
@@ -460,16 +560,20 @@
     );
     
     // Check if exercise is complete
-    const remainingSets = exerciseSets.filter(s => s.id !== currentSet!.id && s.completedReps === undefined);
+    const remainingSets = exerciseSets.filter(s => s.completedReps === undefined && s.completedTimeSeconds === undefined);
     if (remainingSets.length === 0) {
       setTimeout(() => backToOverview(), 500);
     }
+    // Otherwise, reactive statements will automatically move to next set
+  }
+  
+  function saveAndNextSet() {
+    finalizeSetAndSave();
   }
   
   function skipRest() {
-    if (restInterval) clearInterval(restInterval);
-    restEndTime = null;
-    saveAndNextSet();
+    restTimer.skip();
+    finalizeSetAndSave();
   }
   
   function skipSet() {
@@ -480,6 +584,16 @@
       clearInterval(exerciseTimerInterval);
       exerciseTimerInterval = null;
       isTimerRunning = false;
+    }
+    
+    // Clear any pending debounce
+    if (saveDebounceTimer) {
+      clearTimeout(saveDebounceTimer);
+      saveDebounceTimer = null;
+    }
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
     }
     
     sets = sets.map((s) => 
@@ -540,7 +654,23 @@
     }
   }
   
-  function finishWorkout() {
+  async function finishWorkout() {
+    // Save workout to database
+    const authState = $authStore;
+    if (authState.userId) {
+      try {
+        await convex.mutation(api.workouts.saveCompleted, {
+          userId: authState.userId as any,
+          workoutType,
+          plan,
+          sets,
+          completedAt: Date.now()
+        });
+        console.log('Workout saved successfully');
+      } catch (e) {
+        console.error('Failed to save workout:', e);
+      }
+    }
     clearWorkoutState();
     goto('/');
   }
@@ -584,10 +714,6 @@
       return;
     }
     
-    console.log('Applying modification:', response.summary);
-    console.log('New plan:', response.newPlan);
-    console.log('Changes:', response.changes);
-    
     // Apply the modifications
     plan = response.newPlan;
     
@@ -596,8 +722,6 @@
       sets.filter(s => s.completedReps !== undefined || s.completedTimeSeconds !== undefined)
         .map(s => s.exerciseId)
     );
-    
-    console.log('Completed exercises:', Array.from(completedExerciseIds));
     
     // Generate new sets
     let newSets: WorkoutSet[] = [];
@@ -611,11 +735,9 @@
       if (completedExerciseIds.has(exercise.exerciseId)) {
         // Keep existing sets for this exercise
         const existingSets = sets.filter(s => s.exerciseId === exercise.exerciseId);
-        console.log(`Keeping ${existingSets.length} existing sets for ${exercise.exerciseId}`);
         newSets = [...newSets, ...existingSets];
       } else {
         // Generate new sets
-        console.log(`Generating new sets for ${exercise.exerciseId}: ${exercise.sets}x${exercise.reps} @ ${exercise.weight}kg`);
         const exerciseSets = generateAllSets(
           exercise.exerciseId,
           exercise.sets,
@@ -626,8 +748,6 @@
         newSets = [...newSets, ...exerciseSets];
       }
     }
-    
-    console.log(`Total new sets: ${newSets.length}`);
     sets = newSets;
     workoutModified = true;
     modificationSummary = response.summary;
@@ -675,8 +795,6 @@
       sets,
       viewMode,
       activeExerciseId,
-      restEndTime,
-      restRemaining,
       timestamp: Date.now()
     };
     
@@ -713,8 +831,11 @@
     sets = state.sets;
     viewMode = state.viewMode;
     activeExerciseId = state.activeExerciseId;
-    restEndTime = state.restEndTime;
-    restRemaining = state.restRemaining || 0;
+    
+    // Hide main nav if we're in exercise view
+    if (viewMode === 'exercise') {
+      navVisibilityStore.set({ hideMainNav: true });
+    }
     
     // Reset lastSetId to force re-initialization
     lastSetId = null;
@@ -731,20 +852,6 @@
       } else {
         exerciseTimerRemaining = 0;
       }
-    }
-    
-    // Restart rest timer if it was running
-    if (restEndTime && restRemaining > 0) {
-      if (restInterval) clearInterval(restInterval);
-      restInterval = setInterval(() => {
-        if (restEndTime) {
-          restRemaining = Math.ceil((restEndTime - Date.now()) / 1000);
-          if (restRemaining < 0 && !restSoundPlayed) {
-            restSoundPlayed = true;
-            playRestCompleteSound();
-          }
-        }
-      }, 100);
     }
     
     showRestoreModal = false;
@@ -777,12 +884,28 @@
 {:else if showCompleteConfirm}
   <!-- Workout Complete Screen -->
   <div class="min-h-screen flex flex-col items-center justify-center p-4 bg-bg">
-    <div class="text-6xl mb-4">🎉</div>
+    <div class="text-6xl mb-4">💪</div>
     <h1 class="text-2xl font-bold mb-2">Workout Complete!</h1>
     <p class="text-text-muted mb-6">Great job crushing those sets</p>
     
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-3 gap-3 w-full max-w-sm mb-6">
+      <div class="bg-surface rounded-xl p-3 text-center">
+        <div class="text-2xl font-bold text-primary">{completedSetsCount}/{totalSetsCount}</div>
+        <div class="text-xs text-text-muted">Sets</div>
+      </div>
+      <div class="bg-surface rounded-xl p-3 text-center">
+        <div class="text-2xl font-bold text-primary">{Math.round(totalVolumeLifted)}</div>
+        <div class="text-xs text-text-muted">kg Total</div>
+      </div>
+      <div class="bg-surface rounded-xl p-3 text-center">
+        <div class="text-2xl font-bold text-primary">{workSetsCompletedCount}/{workSetsTotalCount}</div>
+        <div class="text-xs text-text-muted">Work Sets</div>
+      </div>
+    </div>
+    
     <div class="bg-surface rounded-xl p-4 w-full max-w-sm mb-6">
-      <h3 class="font-semibold mb-3">Summary</h3>
+      <h3 class="font-semibold mb-3">Exercises</h3>
       {#each plan as exercise}
         {@const exerciseData = getExerciseById(exercise.exerciseId)}
         {@const exerciseSets = sets.filter(s => s.exerciseId === exercise.exerciseId && s.type === 'work')}
@@ -792,7 +915,7 @@
         <div class="flex justify-between py-2 border-b border-surface-light last:border-0">
           <span>{exerciseData?.name}</span>
           <span class={completed === exerciseSets.length ? 'text-success' : 'text-warning'}>
-            {completed}/{exerciseSets.length} sets
+            {completed}/{exerciseSets.length}
           </span>
         </div>
       {/each}
@@ -944,27 +1067,47 @@
           </svg>
           <span class="text-sm">Back</span>
         </button>
-        <span class="text-sm text-text-muted">{currentExerciseSetIndex + 1} / {exerciseSets.length}</span>
-      </div>
-      
-      <!-- Progress Bar -->
-      <div class="w-full bg-surface-light rounded-full h-1 mt-1.5">
-        <div class="bg-primary h-1 rounded-full transition-all" style="width: {(currentExerciseSetIndex / exerciseSets.length) * 100}%"></div>
+
       </div>
     </header>
     
     <!-- Main Content -->
     <main class="flex-1 flex flex-col items-center px-4 pb-4 pt-3">
       
-      <!-- Exercise Info - tighter spacing -->
+      <!-- Sets Timeline - Horizontal circles showing progress -->
+      <div class="w-full overflow-x-auto mb-4 shrink-0" bind:this={timelineContainer}>
+        <div class="flex items-center justify-start gap-2 min-w-min px-2 py-3">
+          {#each exerciseSets as set, index}
+            {@const isCurrent = index === currentExerciseSetIndex}
+            {@const isDone = set.completedReps !== undefined || set.completedTimeSeconds !== undefined}
+            {@const isWarmup = set.type === 'warmup'}
+            <div 
+              class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all shrink-0
+                {isCurrent 
+                  ? (isWarmup ? 'bg-warning text-bg ring-2 ring-warning ring-offset-2 ring-offset-bg scale-110' : 'bg-primary text-white ring-2 ring-primary ring-offset-2 ring-offset-bg scale-110')
+                  : isDone
+                    ? (isWarmup ? 'bg-warning text-bg' : 'bg-primary text-white')
+                    : (isWarmup ? 'bg-warning/20 text-warning border border-warning/40' : 'bg-surface-light text-text-muted border border-surface-light')
+                }"
+              title={isWarmup ? `Warmup ${set.setNumber}` : `Work set ${set.setNumber}`}
+            >
+              {#if isDone}
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                </svg>
+              {:else if set.targetTimeSeconds}
+                {set.targetTimeSeconds}s
+              {:else}
+                {set.targetWeight > 0 ? set.targetWeight : 'BW'}
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </div>
+      
+      <!-- Exercise Info - just the name -->
       <div class="text-center mb-3">
         <h1 class="text-xl font-bold leading-tight">{currentExercise.name}</h1>
-        <div class="flex items-center justify-center gap-2 mt-1.5">
-          <span class="px-2.5 py-0.5 rounded-full text-xs {currentSet.type === 'warmup' ? 'bg-warning/20 text-warning' : 'bg-primary/20 text-primary'}">
-            {getSetTypeLabel(currentSet.type)}
-          </span>
-          <span class="text-text-muted text-sm">Set {currentSet.setNumber}</span>
-        </div>
       </div>
       
       <!-- Weight/Time Display - more compact -->
@@ -999,22 +1142,46 @@
         {/if}
       {:else}
         <!-- Weight Display for weight-based exercises -->
-        <div class="bg-surface rounded-xl p-3 mb-4 text-center min-w-[160px]">
-          <div class="text-text-muted text-xs mb-0.5">Weight</div>
-          <div class="text-3xl font-bold">{currentSet.targetWeight} <span class="text-lg">kg</span></div>
-          {#if currentExercise && currentExercise.equipment.includes('barbell')}
-            {@const platePerSide = getPlateWeightPerSide(currentSet.targetWeight, currentSet.exerciseId)}
-            {#if platePerSide !== null && platePerSide > 0}
-              <div class="text-xs text-primary mt-1">
-                {BAR_WEIGHT} kg bar + {platePerSide} kg each side
-              </div>
-            {:else if platePerSide === 0}
-              <div class="text-xs text-primary mt-1">
-                Just the {BAR_WEIGHT} kg bar
-              </div>
-            {/if}
+        {#if currentExercise && currentExercise.equipment.includes('barbell')}
+          {@const platePerSide = getPlateWeightPerSide(currentSet.targetWeight, currentSet.exerciseId)}
+          {#if platePerSide !== null && platePerSide >= 0}
+            <!-- Barbell: show per-side weight as the main number -->
+            {@const plates = getPlateBreakdown(platePerSide)}
+            <div class="bg-surface rounded-xl p-3 mb-4 text-center min-w-[160px]">
+              <div class="text-text-muted text-xs mb-0.5">Per Side</div>
+              <div class="text-3xl font-bold">{platePerSide} <span class="text-lg">kg</span></div>
+              <!-- Plate visualization -->
+              {#if plates.length > 0}
+                <div class="flex items-center justify-center gap-1 mt-3">
+                  {#each plates as plate}
+                    <div 
+                      class="rounded-full flex items-center justify-center text-xs font-bold text-bg
+                        {plate >= 20 ? 'w-12 h-12 bg-danger' : 
+                         plate >= 10 ? 'w-10 h-10 bg-blue-500' : 
+                         plate >= 5 ? 'w-9 h-9 bg-success' : 
+                         plate >= 2.5 ? 'w-8 h-8 bg-warning' : 'w-7 h-7 bg-text-muted'}"
+                      title="{plate} kg plate"
+                    >
+                      {plate}
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {:else}
+            <!-- Fallback if calculation fails -->
+            <div class="bg-surface rounded-xl p-3 mb-4 text-center min-w-[160px]">
+              <div class="text-text-muted text-xs mb-0.5">Weight</div>
+              <div class="text-3xl font-bold">{currentSet.targetWeight} <span class="text-lg">kg</span></div>
+            </div>
           {/if}
-        </div>
+        {:else}
+          <!-- Non-barbell: show total weight -->
+          <div class="bg-surface rounded-xl p-3 mb-4 text-center min-w-[160px]">
+            <div class="text-text-muted text-xs mb-0.5">Weight</div>
+            <div class="text-3xl font-bold">{currentSet.targetWeight} <span class="text-lg">kg</span></div>
+          </div>
+        {/if}
         <!-- Progression Mode Toggle (for exercises that support it) -->
         {#if currentExercise?.supportsBodyweightProgression}
           <div class="mb-4">
@@ -1079,10 +1246,48 @@
           </div>
         {/if}
       {:else}
-        <!-- Reps Counter - slightly smaller -->
+        <!-- Reps Counter - with long press for extra reps -->
         <div class="relative">
           <button
             on:click={handleCircleTap}
+            on:mousedown={() => {
+              longPressTimer = setTimeout(() => {
+                // Long press: add extra rep and start rest timer
+                completedRepsCount++;
+                tapCount = 0;
+                setIsComplete = true;
+                longPressTimer = null;
+                // Start rest timer immediately (for extra reps, always success)
+                handleExtraRepComplete();
+              }, LONG_PRESS_DURATION);
+            }}
+            on:mouseup={() => {
+              if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+              }
+            }}
+            on:mouseleave={() => {
+              if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+              }
+            }}
+            on:touchstart={() => {
+              longPressTimer = setTimeout(() => {
+                completedRepsCount++;
+                tapCount = 0;
+                setIsComplete = true;
+                longPressTimer = null;
+                handleExtraRepComplete();
+              }, LONG_PRESS_DURATION);
+            }}
+            on:touchend={() => {
+              if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+              }
+            }}
             class="w-44 h-44 rounded-full {setIsComplete ? 'bg-primary' : 'bg-surface'} hover:opacity-90 active:scale-95 transition-all flex flex-col items-center justify-center shadow-2xl {setIsComplete ? 'shadow-primary/20' : 'shadow-surface-light/20'} border-2 {setIsComplete ? 'border-primary' : 'border-surface-light'}"
           >
             <span class="text-5xl font-bold {setIsComplete ? 'text-white' : 'text-text'}">{completedRepsCount}</span>
@@ -1097,6 +1302,8 @@
                 Tap again to reset
               {:else if completedRepsCount === currentSet.targetReps}
                 All reps done!
+              {:else if completedRepsCount > currentSet.targetReps}
+                +{completedRepsCount - currentSet.targetReps} extra!
               {:else}
                 Tap again if fewer reps
               {/if}
@@ -1104,49 +1311,26 @@
           </button>
         </div>
         
-        <!-- Status indicator (only for partial reps or failed sets) -->
-        {#if setIsComplete && completedRepsCount !== 0 && completedRepsCount !== currentSet.targetReps}
+        <!-- Status indicator for partial reps, extra reps, or failed sets -->
+        {#if setIsComplete && completedRepsCount !== currentSet.targetReps}
           <div class="mt-4 text-center">
-            <span class="px-3 py-1.5 rounded-lg font-semibold bg-warning/20 text-warning text-sm">
-              Got {completedRepsCount} reps
-            </span>
+            {#if completedRepsCount > currentSet.targetReps}
+              <span class="px-3 py-1.5 rounded-lg font-semibold bg-success/20 text-success text-sm">
+                {completedRepsCount} reps (+{completedRepsCount - currentSet.targetReps} extra!)
+              </span>
+            {:else}
+              <span class="px-3 py-1.5 rounded-lg font-semibold bg-warning/20 text-warning text-sm">
+                Got {completedRepsCount} reps
+              </span>
+            {/if}
           </div>
         {/if}
       {/if}
       
-      <!-- Status indicator (only for partial reps or failed sets) -->
-      {#if setIsComplete && completedRepsCount !== 0 && completedRepsCount !== currentSet.targetReps}
-        <div class="mt-4 text-center">
-          <span class="px-3 py-1.5 rounded-lg font-semibold bg-warning/20 text-warning text-sm">
-            Got {completedRepsCount} reps
-          </span>
-        </div>
-      {/if}
     </main>
     
-    <!-- Fixed Rest Timer (visible when running) -->
-    {#if restEndTime}
-      <div class="fixed bottom-0 left-0 right-0 bg-surface border-t border-surface-light p-3 z-40">
-        <div class="flex items-center justify-between max-w-lg mx-auto">
-          <button
-            on:click={skipRest}
-            class="px-4 py-2 text-primary hover:text-primary-dark font-medium text-sm"
-          >
-            Skip Rest
-          </button>
-          
-          <div class="text-center">
-            <div class="text-xs text-text-muted uppercase tracking-wide">Rest</div>
-            <div class="text-2xl font-mono font-bold {restRemaining < 0 ? 'text-danger' : restRemaining < 30 ? 'text-success' : 'text-primary'}">
-              {formatTime(restRemaining)}
-            </div>
-          </div>
-          
-          <div class="w-16"></div>
-        </div>
-      </div>
-    {:else}
-      <!-- Footer Actions -->
+    <!-- Footer Actions (only show when rest timer is not running) -->
+    {#if !$restTimer.isRunning}
       <footer class="bg-surface border-t border-surface-light p-4">
         <div class="flex items-center justify-between">
           <button
@@ -1162,7 +1346,7 @@
             </div>
           {:else}
             <div class="text-center text-text-muted text-sm">
-              Rest: {formatTime(REST_TIME_SUCCESS)}
+              Rest after set
             </div>
           {/if}
           

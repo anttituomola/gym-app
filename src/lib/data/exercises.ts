@@ -16,7 +16,7 @@ export const EXERCISES: Exercise[] = [
       { percentOfWork: 0, reps: 10 },      // empty bar (20kg)
       { percentOfWork: 0.40, reps: 5 },
       { percentOfWork: 0.60, reps: 3 },
-      { percentOfWork: 0.80, reps: 1 }
+      { percentOfWork: 0.80, reps: 3 }     // minimum 3 reps for effective warmup
     ]
   },
   {
@@ -34,7 +34,7 @@ export const EXERCISES: Exercise[] = [
       { percentOfWork: 0, reps: 10 },
       { percentOfWork: 0.40, reps: 5 },
       { percentOfWork: 0.60, reps: 3 },
-      { percentOfWork: 0.80, reps: 1 }
+      { percentOfWork: 0.80, reps: 3 }
     ]
   },
   {
@@ -52,7 +52,7 @@ export const EXERCISES: Exercise[] = [
       { percentOfWork: 0, reps: 10 },
       { percentOfWork: 0.40, reps: 5 },
       { percentOfWork: 0.60, reps: 3 },
-      { percentOfWork: 0.80, reps: 1 }
+      { percentOfWork: 0.80, reps: 3 }
     ]
   },
   {
@@ -69,7 +69,7 @@ export const EXERCISES: Exercise[] = [
     warmupFormula: [
       { percentOfWork: 0, reps: 10 },
       { percentOfWork: 0.50, reps: 3 },
-      { percentOfWork: 0.70, reps: 1 }
+      { percentOfWork: 0.70, reps: 3 }
     ]
   },
   {
@@ -215,8 +215,10 @@ export const EXERCISES: Exercise[] = [
       deloadPercent: 0.10
     },
     warmupFormula: [
-      { percentOfWork: 0.60, reps: 5 }
-    ]
+      { percentOfWork: 0.60, reps: 8 }
+    ],
+    defaultReps: 10,
+    defaultIncrementReps: 1
   },
   {
     id: 'barbell-curl',
@@ -230,8 +232,10 @@ export const EXERCISES: Exercise[] = [
       deloadPercent: 0.10
     },
     warmupFormula: [
-      { percentOfWork: 0.50, reps: 5 }
-    ]
+      { percentOfWork: 0.50, reps: 8 }
+    ],
+    defaultReps: 10,
+    defaultIncrementReps: 1
   },
   {
     id: 'plank',
@@ -384,8 +388,10 @@ export const EXERCISES: Exercise[] = [
       deloadPercent: 0.10
     },
     warmupFormula: [
-      { percentOfWork: 0.60, reps: 5 }
-    ]
+      { percentOfWork: 0.60, reps: 8 }
+    ],
+    defaultReps: 12,
+    defaultIncrementReps: 2
   }
 ];
 

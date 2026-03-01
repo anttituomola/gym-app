@@ -8,42 +8,45 @@
   let loading = $state(true);
   let activeProgram: TrainingProgram | null = $state(null);
   let needsOnboarding = $state(false);
+  let recentWorkouts: any[] = $state([]);
+  let dataLoaded = $state(false);
   
-  // Load profile and active program when user is available
+  // Subscribe to auth store and load data when ready
   $effect(() => {
-    if ($authStore.userId && loading && !$authStore.isLoading) {
-      loadData();
-    }
+    const unsub = authStore.subscribe((auth) => {
+      console.log('Home auth state:', auth);
+      if (!auth.isLoading && !dataLoaded) {
+        if (auth.userId) {
+          loadData(auth.userId);
+        } else {
+          loading = false;
+        }
+      }
+    });
+    return () => unsub();
   });
   
-  // Handle case where user is not logged in - stop loading after auth is ready
-  $effect(() => {
-    if (!$authStore.isLoading && !$authStore.userId && loading) {
-      loading = false;
-    }
-  });
-  
-  async function loadData() {
-    if (!$authStore.userId) return;
+  async function loadData(userId: string) {
+    dataLoaded = true;
     try {
       // Load profile
       profile = await convex.query(api.userProfiles.get, { 
-        userId: $authStore.userId as any 
+        userId: userId as any 
       });
       
       // Create profile if it doesn't exist
       if (!profile) {
         await convex.mutation(api.userProfiles.getOrCreate, { 
-          userId: $authStore.userId as any 
+          userId: userId as any 
         });
         profile = await convex.query(api.userProfiles.get, { 
-          userId: $authStore.userId as any 
+          userId: userId as any 
         });
       }
       
       // Load active program first (users with existing programs should see them)
       const program = await convex.query(api.programs.getActive, {
-        userId: $authStore.userId as any
+        userId: userId as any
       });
       
       if (program) {
@@ -61,6 +64,19 @@
       // Check if onboarding is needed - only if no active program and onboarding not completed
       // Users with existing programs (from before onboarding) should see their workouts
       needsOnboarding = !profile?.onboardingCompleted && !activeProgram;
+      
+      // Load recent workouts
+      try {
+        const workouts = await convex.query(api.workouts.getHistory, { 
+          userId: userId as any,
+          limit: 5
+        });
+        console.log('Loaded recent workouts:', workouts);
+        recentWorkouts = workouts || [];
+      } catch (e) {
+        console.log('Could not load recent workouts:', e);
+        recentWorkouts = [];
+      }
     } catch (err) {
       console.error('Failed to load data:', err);
     } finally {
@@ -87,7 +103,7 @@
     goto(`/workout?program=${activeProgram.id}&workout=${workoutIndex}`);
   }
   
-  let recentWorkouts: any[] = [];
+
 </script>
 
 <svelte:head>

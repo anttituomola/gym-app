@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
   import { authStore, initAuth, navVisibilityStore } from '$lib/convex';
   import { signOut } from '$lib/auth';
+  import { restTimer, formattedRestTime, REST_TIME_SUCCESS } from '$lib/stores/restTimer';
   
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -61,6 +62,34 @@
       </div>
     {:else if $authStore.isAuthenticated || isPublicPage}
       <slot />
+    {/if}
+    
+    <!-- Global Rest Timer - Fixed at bottom of viewport -->
+    {#if $restTimer.isRunning}
+      <div 
+        class="fixed left-0 right-0 bg-surface border-t border-surface-light p-3 z-[60]"
+        class:bottom-0={hideNav}
+        class:bottom-16={!hideNav}
+        class:md:bottom-0={!hideNav}
+      >
+        <div class="flex items-center justify-between max-w-lg mx-auto">
+          <button
+            on:click={() => restTimer.skip()}
+            class="px-4 py-2 text-primary hover:text-primary-dark font-medium text-sm"
+          >
+            Skip Rest
+          </button>
+          
+          <div class="text-center">
+            <div class="text-xs text-text-muted uppercase tracking-wide">Rest</div>
+            <div class="text-2xl font-mono font-bold {$restTimer.remaining < 0 ? 'text-danger' : $restTimer.remaining < 30 ? 'text-success' : 'text-primary'}">
+              {$formattedRestTime}
+            </div>
+          </div>
+          
+          <div class="w-16"></div>
+        </div>
+      </div>
     {/if}
     
     <!-- Bottom Navigation - Fixed on mobile -->
