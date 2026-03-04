@@ -177,7 +177,9 @@ export default defineSchema({
     ),
   })
     .index("by_user", ["userId"])
-    .index("by_user_status", ["userId", "status"]),
+    .index("by_user_status", ["userId", "status"])
+    .index("by_user_started", ["userId", "startedAt"])
+    .index("by_user_completed", ["userId", "completedAt"]),
 
   // Equipment and custom exercises (user-created via AI recognition)
   equipments: defineTable({

@@ -22,13 +22,19 @@ export const getHistory = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    // Use the by_user_started index to get workouts sorted by startedAt
     const workouts = await ctx.db
       .query("workouts")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .withIndex("by_user_started", (q) => q.eq("userId", args.userId))
       .order("desc")
       .take(args.limit || 50);
 
-    return workouts.filter(w => w.status !== "active");
+    // Filter out active workouts and sort by startedAt to ensure correct order
+    const completedWorkouts = workouts.filter(w => w.status !== "active");
+    
+    // Additional client-side sort to ensure proper date ordering
+    // (handles edge cases where startedAt might differ from index order)
+    return completedWorkouts.sort((a, b) => b.startedAt - a.startedAt);
   },
 });
 
