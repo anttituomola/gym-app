@@ -1,5 +1,6 @@
 <script lang="ts">
   import { parseStrongliftsCSV, convertToDbFormat, extractCurrentWeights, type ImportResult } from '$lib/utils/importStronglifts';
+  import { formatDate } from '$lib/utils/date';
   
   type DbWorkout = ReturnType<typeof convertToDbFormat>;
   type CurrentWeights = ReturnType<typeof extractCurrentWeights>;
@@ -61,12 +62,8 @@
     }
   }
   
-  function formatDate(dateStr: string): string {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
+  function formatDateLocal(dateStr: string): string {
+    return formatDate(dateStr);
   }
 </script>
 
@@ -83,7 +80,7 @@
       bind:this={fileInput}
       type="file"
       accept=".csv"
-      on:change={handleFileSelect}
+      onchange={handleFileSelect}
       class="hidden"
       id="stronglifts-file"
     />
@@ -122,7 +119,7 @@
             <div class="text-right font-medium">{previewData.stats.totalSets}</div>
             <div class="text-text-muted">Date range:</div>
             <div class="text-right font-medium text-xs">
-              {formatDate(previewData.stats.dateRange.start)} - {formatDate(previewData.stats.dateRange.end)}
+              {formatDateLocal(previewData.stats.dateRange.start)} - {formatDateLocal(previewData.stats.dateRange.end)}
             </div>
           </div>
         </div>
@@ -156,7 +153,7 @@
         
         <!-- Import Button -->
         <button
-          on:click={handleImport}
+          onclick={handleImport}
           disabled={isImporting}
           class="w-full bg-primary hover:bg-primary-dark disabled:opacity-50 active:scale-95 transition-all rounded-xl p-3 font-semibold"
         >

@@ -1,4 +1,4 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 
 // Rest timer state
 export interface RestTimerState {
@@ -13,15 +13,20 @@ const REST_TIME_SUCCESS = 180; // 3 minutes in seconds
 const REST_TIME_FAILURE = 300; // 5 minutes in seconds
 
 function createRestTimerStore() {
-  const { subscribe, set, update } = writable<RestTimerState>({
+  // Internal state that won't be exposed directly
+  let currentState: RestTimerState = {
     isRunning: false,
     endTime: null,
     remaining: 0,
     isFailure: false
-  });
+  };
+
+  const { subscribe, set } = writable<RestTimerState>(currentState);
 
   let interval: ReturnType<typeof setInterval> | null = null;
   let soundPlayed = false;
+  let currentOnComplete: (() => void) | undefined = undefined;
+  let currentOnSkip: (() => void) | undefined = undefined;
 
   // Audio for rest timer completion
   function playRestCompleteSound() {
@@ -42,7 +47,28 @@ function createRestTimerStore() {
     }
   }
 
-  function startTimer(isFailure: boolean = false, onComplete?: () => void) {
+  // Update the store with current state - always creates a new object
+  function updateStore(newState: Partial<RestTimerState>) {
+    currentState = { ...currentState, ...newState };
+    set(currentState);
+  }
+
+  function tick() {
+    if (!currentState.endTime) return;
+    
+    const remaining = Math.ceil((currentState.endTime - Date.now()) / 1000);
+    
+    // Play sound when timer reaches zero
+    if (remaining < 0 && !soundPlayed) {
+      soundPlayed = true;
+      playRestCompleteSound();
+    }
+    
+    // Always update with a new state object to ensure reactivity
+    updateStore({ remaining });
+  }
+
+  function startTimer(isFailure: boolean = false, onComplete?: () => void, onSkip?: () => void) {
     const restTime = isFailure ? REST_TIME_FAILURE : REST_TIME_SUCCESS;
     const endTime = Date.now() + restTime * 1000;
     
@@ -52,31 +78,22 @@ function createRestTimerStore() {
     }
     
     soundPlayed = false;
+    currentOnComplete = onComplete;
+    currentOnSkip = onSkip;
     
-    set({
+    // Set initial state
+    currentState = {
       isRunning: true,
       endTime,
       remaining: restTime,
       isFailure,
       onComplete
-    });
+    };
+    set(currentState);
 
-    // Start the interval
-    interval = setInterval(() => {
-      update(state => {
-        if (!state.endTime) return state;
-        
-        const remaining = Math.ceil((state.endTime - Date.now()) / 1000);
-        
-        // Play sound when timer reaches zero
-        if (remaining < 0 && !soundPlayed) {
-          soundPlayed = true;
-          playRestCompleteSound();
-        }
-        
-        return { ...state, remaining };
-      });
-    }, 100);
+    // Start the interval - tick immediately and then every 100ms
+    tick();
+    interval = setInterval(tick, 100);
   }
 
   function skipTimer() {
@@ -85,8 +102,15 @@ function createRestTimerStore() {
       interval = null;
     }
     
-    const state = { isRunning: false, endTime: null, remaining: 0, isFailure: false };
-    set(state);
+    const onSkip = currentOnSkip;
+    currentOnComplete = undefined;
+    currentOnSkip = undefined;
+    currentState = { isRunning: false, endTime: null, remaining: 0, isFailure: false };
+    set(currentState);
+    
+    if (onSkip) {
+      onSkip();
+    }
   }
 
   function completeTimer() {
@@ -95,12 +119,11 @@ function createRestTimerStore() {
       interval = null;
     }
     
-    let onComplete: (() => void) | undefined;
+    const onComplete = currentOnComplete;
+    currentOnComplete = undefined;
     
-    update(state => {
-      onComplete = state.onComplete;
-      return { isRunning: false, endTime: null, remaining: 0, isFailure: false };
-    });
+    currentState = { isRunning: false, endTime: null, remaining: 0, isFailure: false };
+    set(currentState);
     
     if (onComplete) {
       onComplete();
@@ -114,11 +137,16 @@ function createRestTimerStore() {
     }
   }
 
+  function setOnSkip(callback: (() => void) | undefined) {
+    currentOnSkip = callback;
+  }
+
   return {
     subscribe,
     start: startTimer,
     skip: skipTimer,
     complete: completeTimer,
+    setOnSkip,
     cleanup
   };
 }

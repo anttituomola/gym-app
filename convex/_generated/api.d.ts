@@ -12,6 +12,8 @@ import type * as auth from "../auth.js";
 import type * as authCheck from "../authCheck.js";
 import type * as clearAuth from "../clearAuth.js";
 import type * as clearData from "../clearData.js";
+import type * as equipmentRecognition from "../equipmentRecognition.js";
+import type * as equipments from "../equipments.js";
 import type * as exercises from "../exercises.js";
 import type * as http from "../http.js";
 import type * as import_ from "../import.js";
@@ -33,6 +35,8 @@ declare const fullApi: ApiFromModules<{
   authCheck: typeof authCheck;
   clearAuth: typeof clearAuth;
   clearData: typeof clearData;
+  equipmentRecognition: typeof equipmentRecognition;
+  equipments: typeof equipments;
   exercises: typeof exercises;
   http: typeof http;
   import: typeof import_;

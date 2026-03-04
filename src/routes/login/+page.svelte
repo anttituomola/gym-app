@@ -193,7 +193,7 @@
       
       <!-- Google Sign In Button -->
       <button
-        on:click={handleGoogleSignIn}
+        onclick={handleGoogleSignIn}
         disabled={isGoogleLoading}
         class="w-full bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all rounded-xl p-3 font-medium mb-4 flex items-center justify-center gap-3 border border-gray-300"
       >
@@ -220,7 +220,7 @@
         </div>
       </div>
       
-      <form on:submit={handleSubmit} class="space-y-4">
+      <form onsubmit={handleSubmit} class="space-y-4">
         <div>
           <label for="email" class="block text-sm font-medium mb-1">Email</label>
           <input

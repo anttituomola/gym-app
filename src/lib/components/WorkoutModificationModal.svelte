@@ -211,18 +211,18 @@ Additional details: ${additionalDetails}`;
   <div 
     class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
     transition:fade={{ duration: 200 }}
-    on:click={onCancel}
+    onclick={onCancel}
   >
     <div 
       class="bg-surface rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col"
       transition:fly={{ y: 20, duration: 300, easing: quintOut }}
-      on:click|stopPropagation
+      onclick={(e) => e.stopPropagation()}
     >
       <!-- Header -->
       <header class="p-4 border-b border-surface-light flex items-center justify-between">
         <h2 class="text-xl font-bold">Modify Workout</h2>
         <button 
-          on:click={onCancel}
+          onclick={onCancel}
           class="text-text-muted hover:text-text p-1"
           aria-label="Close"
         >
@@ -246,7 +246,7 @@ Additional details: ${additionalDetails}`;
                 Your key is stored locally and never sent to our servers.
               </p>
               <button 
-                on:click={goToSettings}
+                onclick={goToSettings}
                 class="bg-primary hover:bg-primary-dark px-6 py-3 rounded-xl font-semibold"
               >
                 Configure AI Settings
@@ -260,7 +260,7 @@ Additional details: ${additionalDetails}`;
               <div class="grid grid-cols-2 gap-3">
                 {#each PRESET_CATEGORIES as category}
                   <button
-                    on:click={() => selectedCategory = category.id}
+                    onclick={() => selectedCategory = category.id}
                     class="p-4 bg-surface-light hover:bg-surface-light/80 rounded-xl text-left transition-all"
                   >
                     <div class="text-2xl mb-2">{category.icon}</div>
@@ -269,7 +269,7 @@ Additional details: ${additionalDetails}`;
                 {/each}
                 
                 <button
-                  on:click={() => state = { type: 'custom-input' }}
+                  onclick={() => state = { type: 'custom-input' }}
                   class="p-4 bg-surface-light hover:bg-surface-light/80 rounded-xl text-left transition-all"
                 >
                   <div class="text-2xl mb-2">💬</div>
@@ -280,7 +280,7 @@ Additional details: ${additionalDetails}`;
               <!-- Sub-options for selected category -->
               <div class="mb-4">
                 <button 
-                  on:click={() => { selectedCategory = null; selectedOptions = []; }}
+                  onclick={() => { selectedCategory = null; selectedOptions = []; }}
                   class="text-sm text-text-muted hover:text-text flex items-center gap-1"
                 >
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -295,7 +295,7 @@ Additional details: ${additionalDetails}`;
                 <div class="space-y-2">
                   {#each EQUIPMENT_OPTIONS as option}
                     <button
-                      on:click={() => {
+                      onclick={() => {
                         if (selectedOptions.includes(option.id)) {
                           selectedOptions = selectedOptions.filter(id => id !== option.id);
                         } else {
@@ -322,7 +322,7 @@ Additional details: ${additionalDetails}`;
                 <div class="space-y-2">
                   {#each INJURY_BODY_PARTS as part}
                     <button
-                      on:click={() => {
+                      onclick={() => {
                         if (selectedOptions.includes(part.id)) {
                           selectedOptions = selectedOptions.filter(id => id !== part.id);
                         } else {
@@ -348,7 +348,7 @@ Additional details: ${additionalDetails}`;
                 <p class="text-sm text-text-muted mb-3">How are you feeling?</p>
                 <div class="space-y-3">
                   <button
-                    on:click={() => { selectedOptions = ['easier']; handleCategorySubmit(); }}
+                    onclick={() => { selectedOptions = ['easier']; handleCategorySubmit(); }}
                     class="w-full p-4 bg-surface-light hover:bg-surface-light/80 rounded-xl text-left"
                   >
                     <div class="flex items-center gap-3">
@@ -361,7 +361,7 @@ Additional details: ${additionalDetails}`;
                   </button>
                   
                   <button
-                    on:click={() => { selectedOptions = ['harder']; handleCategorySubmit(); }}
+                    onclick={() => { selectedOptions = ['harder']; handleCategorySubmit(); }}
                     class="w-full p-4 bg-surface-light hover:bg-surface-light/80 rounded-xl text-left"
                   >
                     <div class="flex items-center gap-3">
@@ -379,7 +379,7 @@ Additional details: ${additionalDetails}`;
                 <div class="space-y-2">
                   {#each categoryPresets as preset}
                     <button
-                      on:click={() => handlePresetSelect(preset.id)}
+                      onclick={() => handlePresetSelect(preset.id)}
                       class="w-full p-3 bg-surface-light hover:bg-surface-light/80 rounded-xl text-left"
                     >
                       <div class="flex items-center gap-3">
@@ -397,7 +397,7 @@ Additional details: ${additionalDetails}`;
               {#if selectedCategory === 'equipment' || selectedCategory === 'injury'}
                 {#if selectedOptions.length > 0}
                   <button
-                    on:click={handleCategorySubmit}
+                    onclick={handleCategorySubmit}
                     class="w-full mt-4 bg-primary hover:bg-primary-dark p-4 rounded-xl font-semibold"
                   >
                     Continue
@@ -411,7 +411,7 @@ Additional details: ${additionalDetails}`;
         {:else if state.type === 'custom-input'}
           <div class="mb-4">
             <button 
-              on:click={() => state = { type: 'quick-select' }}
+              onclick={() => state = { type: 'quick-select' }}
               class="text-sm text-text-muted hover:text-text flex items-center gap-1"
             >
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -426,13 +426,13 @@ Additional details: ${additionalDetails}`;
             bind:value={customRequest}
             placeholder="e.g., My right shoulder hurts, can you suggest something easier for pressing?"
             class="w-full h-32 bg-surface-light rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-primary"
-          />
+          ></textarea>
           <div class="text-right text-sm text-text-muted mt-1">
             {customRequest.length}/500
           </div>
           
           <button
-            on:click={handleCustomSubmit}
+            onclick={handleCustomSubmit}
             disabled={!customRequest.trim()}
             class="w-full mt-4 bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed p-4 rounded-xl font-semibold"
           >
@@ -469,7 +469,7 @@ Additional details: ${additionalDetails}`;
                   <strong>This may not be what you want.</strong>
                 </p>
                 <button
-                  on:click={() => submitRefinement('Please include ALL exercises in the plan, not just the changed ones. Keep the original workout structure.')}
+                  onclick={() => submitRefinement('Please include ALL exercises in the plan, not just the changed ones. Keep the original workout structure.')}
                   class="mt-2 text-sm text-primary hover:underline"
                 >
                   Ask AI to include all exercises →
@@ -545,20 +545,20 @@ Additional details: ${additionalDetails}`;
             <!-- Actions -->
             <div class="space-y-2 pt-2">
               <button
-                on:click={confirmModification}
+                onclick={confirmModification}
                 class="w-full bg-primary hover:bg-primary-dark p-4 rounded-xl font-semibold"
               >
                 ✓ Looks Good - Start Modified Workout
               </button>
               <div class="flex gap-2">
                 <button
-                  on:click={handleRefinement}
+                  onclick={handleRefinement}
                   class="flex-1 bg-surface-light hover:bg-surface-light/80 p-3 rounded-xl"
                 >
                   Add Details...
                 </button>
                 <button
-                  on:click={() => state = { type: 'quick-select' }}
+                  onclick={() => state = { type: 'quick-select' }}
                   class="flex-1 bg-surface-light hover:bg-surface-light/80 p-3 rounded-xl text-text-muted"
                 >
                   Start Over
@@ -571,7 +571,7 @@ Additional details: ${additionalDetails}`;
         {:else if state.type === 'refinement'}
           <div class="mb-4">
             <button 
-              on:click={() => state = { type: 'review', response: (state as any).previousState?.response }}
+              onclick={() => state = { type: 'review', response: (state as any).previousState?.response }}
               class="text-sm text-text-muted hover:text-text flex items-center gap-1"
             >
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -585,8 +585,8 @@ Additional details: ${additionalDetails}`;
           <textarea
             class="w-full h-32 bg-surface-light rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-primary"
             placeholder="e.g., Can you make the leg exercises lighter? I want to save energy for upper body."
-            on:change={(e) => submitRefinement(e.currentTarget.value)}
-          />
+            onchange={(e) => submitRefinement(e.currentTarget.value)}
+          ></textarea>
           
         <!-- Fallback State -->
         {:else if state.type === 'fallback'}
@@ -605,7 +605,7 @@ Additional details: ${additionalDetails}`;
           <div class="space-y-2">
             {#each state.options as option}
               <button
-                on:click={() => applyFallback(option)}
+                onclick={() => applyFallback(option)}
                 class="w-full p-3 bg-surface-light hover:bg-surface-light/80 rounded-xl text-left"
               >
                 <div class="font-medium">{option.name}</div>
@@ -615,7 +615,7 @@ Additional details: ${additionalDetails}`;
           </div>
           
           <button
-            on:click={() => state = { type: 'quick-select' }}
+            onclick={() => state = { type: 'quick-select' }}
             class="w-full mt-4 p-3 text-text-muted hover:text-text"
           >
             Back to Quick Options
@@ -630,14 +630,14 @@ Additional details: ${additionalDetails}`;
             
             {#if state.canRetry}
               <button
-                on:click={() => state = { type: 'quick-select' }}
+                onclick={() => state = { type: 'quick-select' }}
                 class="bg-primary hover:bg-primary-dark px-6 py-3 rounded-xl font-semibold"
               >
                 Try Again
               </button>
             {:else}
               <button
-                on:click={goToSettings}
+                onclick={goToSettings}
                 class="bg-primary hover:bg-primary-dark px-6 py-3 rounded-xl font-semibold"
               >
                 Go to Settings

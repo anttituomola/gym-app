@@ -184,3 +184,6 @@ export type Equipment = typeof EQUIPMENT_LIST[number];
 
 // Re-export AI types
 export * from './ai';
+
+// Re-export equipment types
+export * from './equipment';

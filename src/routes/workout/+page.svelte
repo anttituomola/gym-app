@@ -2,6 +2,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { onMount, onDestroy } from 'svelte';
+  import { stopPropagation } from 'svelte/legacy';
   import { EXERCISES, DEFAULT_WORKOUT_A, DEFAULT_WORKOUT_B, getExerciseById, getPlateWeightPerSide, BAR_WEIGHT } from '$lib/data/exercises';
   import type { WorkoutSet, PlannedExercise, UserExerciseSettings } from '$lib/types';
   import type { ModificationResponse } from '$lib/types/ai';
@@ -85,6 +86,11 @@
   let isTimerRunning = false;
   let timerCompleted = false;
   
+  // Edit weight modal state
+  let showEditWeightModal = false;
+  let editWeightValue = 0;
+  let editWeightError = '';
+  
   // Derived values for exercise view
   $: exerciseSets = activeExerciseId 
     ? sets.filter(s => s.exerciseId === activeExerciseId).sort((a, b) => a.setNumber - b.setNumber)
@@ -93,6 +99,11 @@
   $: currentSet = currentExerciseSetIndex >= 0 ? exerciseSets[currentExerciseSetIndex] : null;
 
   $: currentExercise = currentSet ? getExerciseById(currentSet.exerciseId) : null;
+  
+  // Debug logging for circle state
+  $: if (viewMode === 'exercise') {
+    console.log('[RENDER STATE] setIsComplete:', setIsComplete, 'currentSet:', currentSet?.id, 'completedReps:', completedRepsCount);
+  }
   
   // Check if current exercise uses bodyweight progression (rep-based instead of weight-based)
   $: useBodyweightProgression = currentExercise?.supportsBodyweightProgression && 
@@ -117,10 +128,23 @@
     // Check for saved workout state first
     const savedState = loadWorkoutState();
     if (savedState) {
-      // Ask user if they want to restore
-      showRestoreModal = true;
-      // Wait for user choice before proceeding
-      return;
+      // Check if user came from "Resume Workout" button (skip confirmation)
+      const params = new URLSearchParams($page.url.search);
+      const autoResume = params.get('resume') === '1';
+      
+      if (autoResume) {
+        // Auto-resume without showing modal
+        restoreWorkout(savedState);
+        // Remove the resume param from URL (clean up)
+        const newUrl = new URL($page.url);
+        newUrl.searchParams.delete('resume');
+        history.replaceState(null, '', newUrl);
+      } else {
+        // Ask user if they want to restore
+        showRestoreModal = true;
+        // Wait for user choice before proceeding
+        return;
+      }
     }
     
     await initializeWorkout();
@@ -260,10 +284,12 @@
   
   // Reset counters when set changes
   $: if (currentSet && viewMode === 'exercise' && currentSet.id !== lastSetId) {
+    console.log('[REACTIVE] Set change detected - currentSet.id:', currentSet.id, 'lastSetId:', lastSetId, 'setIsComplete before:', setIsComplete);
     lastSetId = currentSet.id;
     completedRepsCount = currentSet.targetReps;
     tapCount = 0;
     setIsComplete = false;
+    console.log('[REACTIVE] After reset - setIsComplete:', setIsComplete);
 
     // Clear any pending save debounce
     if (saveDebounceTimer) {
@@ -378,7 +404,8 @@
     viewMode = 'overview';
     activeExerciseId = null;
     navVisibilityStore.set({ hideMainNav: false });
-    restTimer.skip();
+    // Note: restTimer is global and should keep running when navigating away
+    // Do NOT call restTimer.skip() here - timer only stops when explicitly skipped or workout ends
     if (exerciseTimerInterval) clearInterval(exerciseTimerInterval);
     if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
     if (longPressTimer) clearTimeout(longPressTimer);
@@ -415,7 +442,47 @@
   }
   
   function startRest(isFailure: boolean) {
-    restTimer.start(isFailure);
+    restTimer.start(isFailure, undefined, onRestSkipped);
+  }
+  
+  function onRestSkipped() {
+    console.log('[onRestSkipped] START - setIsComplete:', setIsComplete, 'currentSet:', currentSet?.id);
+    
+    // First, finalize the current set (save it to sets array)
+    // This is important because the set might not be saved yet if user clicks during the 5s debounce
+    if (currentSet && setIsComplete) {
+      console.log('[onRestSkipped] Finalizing current set before moving to next');
+      const isFailure = completedRepsCount < currentSet.targetReps;
+      sets = sets.map((s) => 
+        s.id === currentSet.id 
+          ? { ...s, completedReps: completedRepsCount, completedAt: Date.now(), failed: isFailure }
+          : s
+      );
+    }
+    
+    // Clear any pending debounce timer
+    if (saveDebounceTimer) {
+      clearTimeout(saveDebounceTimer);
+      saveDebounceTimer = null;
+    }
+    
+    // Force immediate UI reset for next set
+    setIsComplete = false;
+    tapCount = 0;
+    console.log('[onRestSkipped] After reset - setIsComplete:', setIsComplete);
+    
+    // Use setTimeout to let Svelte update the sets array first, then find next set
+    setTimeout(() => {
+      // Find the next incomplete set and update UI
+      const nextSet = exerciseSets.find(s => s.completedReps === undefined && s.completedTimeSeconds === undefined);
+      console.log('[onRestSkipped] nextSet found:', nextSet?.id);
+      if (nextSet) {
+        completedRepsCount = nextSet.targetReps;
+        lastSetId = nextSet.id;
+        console.log('[onRestSkipped] Updated - completedRepsCount:', completedRepsCount, 'lastSetId:', lastSetId);
+      }
+    }, 0);
+    console.log('[onRestSkipped] END');
   }
   
   function handleExtraRepComplete() {
@@ -571,11 +638,6 @@
     finalizeSetAndSave();
   }
   
-  function skipRest() {
-    restTimer.skip();
-    finalizeSetAndSave();
-  }
-  
   function skipSet() {
     if (!currentSet) return;
     
@@ -652,6 +714,63 @@
     } catch (err) {
       console.error('Failed to toggle progression mode:', err);
     }
+  }
+  
+  // Edit weight functions
+  function openEditWeightModal() {
+    if (!currentSet) return;
+    editWeightValue = currentSet.targetWeight;
+    editWeightError = '';
+    showEditWeightModal = true;
+  }
+  
+  function closeEditWeightModal() {
+    showEditWeightModal = false;
+    editWeightError = '';
+  }
+  
+  function saveEditedWeight() {
+    if (!currentSet || !currentExercise) return;
+    
+    // Validate weight
+    const newWeight = parseFloat(editWeightValue.toString());
+    if (isNaN(newWeight) || newWeight < 0) {
+      editWeightError = 'Please enter a valid weight';
+      return;
+    }
+    
+    if (newWeight > 500) {
+      editWeightError = 'Weight seems too high. Max 500kg.';
+      return;
+    }
+    
+    // Round to nearest 0.5kg for barbell exercises, 1kg for others
+    const isBarbell = currentExercise.equipment.includes('barbell');
+    const roundedWeight = isBarbell ? Math.round(newWeight * 2) / 2 : Math.round(newWeight);
+    
+    // Update all incomplete sets for this exercise with the new weight
+    sets = sets.map(s => {
+      if (s.exerciseId === currentSet!.exerciseId && 
+          s.completedReps === undefined && 
+          s.completedTimeSeconds === undefined) {
+        return { ...s, targetWeight: roundedWeight };
+      }
+      return s;
+    });
+    
+    // Also update the plan for this exercise
+    plan = plan.map(p => {
+      if (p.exerciseId === currentSet!.exerciseId) {
+        return { ...p, weight: roundedWeight };
+      }
+      return p;
+    });
+    
+    // Mark workout as modified
+    workoutModified = true;
+    modificationSummary = `Adjusted ${currentExercise.name} weight to ${roundedWeight}kg`;
+    
+    closeEditWeightModal();
   }
   
   async function finishWorkout() {
@@ -809,7 +928,17 @@
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        return JSON.parse(saved);
+        const state = JSON.parse(saved);
+        // Validate that the saved state has required fields
+        if (state && 
+            Array.isArray(state.plan) && state.plan.length > 0 &&
+            Array.isArray(state.sets) && state.sets.length > 0 &&
+            state.workoutType) {
+          return state;
+        } else {
+          console.warn('Saved workout state is invalid, clearing it');
+          localStorage.removeItem(STORAGE_KEY);
+        }
       }
     } catch (e) {
       console.error('Failed to load workout state:', e);
@@ -818,6 +947,8 @@
   }
   
   function clearWorkoutState() {
+    // Stop the rest timer when workout ends
+    restTimer.skip();
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch (e) {
@@ -826,36 +957,58 @@
   }
   
   function restoreWorkout(state: any) {
+    // First set the basic state
     workoutType = state.workoutType;
     plan = state.plan;
     sets = state.sets;
     viewMode = state.viewMode;
     activeExerciseId = state.activeExerciseId;
     
+    // IMPORTANT: Set workoutStarted = true early so the template renders
+    showRestoreModal = false;
+    workoutStarted = true;
+    
+    // Validate the restored state - if we're in exercise view but the exercise
+    // is already complete, switch back to overview
+    if (viewMode === 'exercise' && activeExerciseId) {
+      const exerciseSets = sets.filter((s: WorkoutSet) => s.exerciseId === activeExerciseId);
+      const hasIncompleteSets = exerciseSets.some((s: WorkoutSet) => 
+        s.completedReps === undefined && s.completedTimeSeconds === undefined
+      );
+      
+      if (!hasIncompleteSets) {
+        // Exercise is complete, switch to overview
+        viewMode = 'overview';
+        activeExerciseId = null;
+      }
+    }
+    
     // Hide main nav if we're in exercise view
     if (viewMode === 'exercise') {
       navVisibilityStore.set({ hideMainNav: true });
+    } else {
+      navVisibilityStore.set({ hideMainNav: false });
     }
     
     // Reset lastSetId to force re-initialization
     lastSetId = null;
     
     // Reset rep counter and timer state for the current set
-    if (currentSet && viewMode === 'exercise') {
-      completedRepsCount = currentSet.targetReps;
-      tapCount = 0;
-      setIsComplete = false;
-      timerCompleted = false;
-      isTimerRunning = false;
-      if (currentSet.targetTimeSeconds && currentSet.targetTimeSeconds > 0) {
-        exerciseTimerRemaining = currentSet.targetTimeSeconds;
-      } else {
-        exerciseTimerRemaining = 0;
+    // Use a small delay to let reactive statements compute currentSet
+    setTimeout(() => {
+      if (currentSet && viewMode === 'exercise') {
+        completedRepsCount = currentSet.targetReps;
+        tapCount = 0;
+        setIsComplete = false;
+        timerCompleted = false;
+        isTimerRunning = false;
+        if (currentSet.targetTimeSeconds && currentSet.targetTimeSeconds > 0) {
+          exerciseTimerRemaining = currentSet.targetTimeSeconds;
+        } else {
+          exerciseTimerRemaining = 0;
+        }
       }
-    }
-    
-    showRestoreModal = false;
-    workoutStarted = true;
+    }, 0);
   }
   
   async function discardSavedWorkout() {
@@ -922,7 +1075,7 @@
     </div>
     
     <button
-      on:click={finishWorkout}
+      onclick={finishWorkout}
       class="w-full max-w-sm bg-primary hover:bg-primary-dark active:scale-95 transition-all rounded-xl p-4 font-semibold"
     >
       Save & Finish
@@ -934,7 +1087,7 @@
     <!-- Header -->
     <header class="bg-surface p-4 border-b border-surface-light">
       <div class="flex items-center justify-between mb-2">
-        <button on:click={cancelWorkout} class="text-text-muted hover:text-text" aria-label="Cancel workout">
+        <button onclick={cancelWorkout} class="text-text-muted hover:text-text" aria-label="Cancel workout">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
           </svg>
@@ -950,7 +1103,7 @@
         <h1 class="text-xl font-bold">Today's Session</h1>
         {#if $aiAvailable}
           <button
-            on:click={openModificationModal}
+            onclick={openModificationModal}
             class="text-sm text-primary hover:text-primary-dark flex items-center gap-1"
             aria-label="Modify workout"
           >
@@ -979,7 +1132,7 @@
             <!-- Reorder buttons -->
             <div class="flex flex-col">
               <button 
-                on:click={() => moveExerciseUp(index)}
+                onclick={() => moveExerciseUp(index)}
                 class="text-text-muted hover:text-text {index === 0 ? 'invisible' : ''}"
                 disabled={index === 0}
                 aria-label="Move up"
@@ -989,7 +1142,7 @@
                 </svg>
               </button>
               <button 
-                on:click={() => moveExerciseDown(index)}
+                onclick={() => moveExerciseDown(index)}
                 class="text-text-muted hover:text-text {index === plan.length - 1 ? 'invisible' : ''}"
                 disabled={index === plan.length - 1}
                 aria-label="Move down"
@@ -1002,7 +1155,7 @@
             
             <!-- Exercise info -->
             <button 
-              on:click={() => startExercise(exercise.exerciseId)}
+              onclick={() => startExercise(exercise.exerciseId)}
               class="flex-1 text-left {isComplete ? '' : 'active:scale-98'}"
               disabled={isComplete}
             >
@@ -1048,7 +1201,7 @@
     <!-- Footer with Finish button -->
     <footer class="bg-surface border-t border-surface-light p-4">
       <button
-        on:click={finishEarly}
+        onclick={finishEarly}
         class="w-full bg-primary hover:bg-primary-dark active:scale-95 transition-all rounded-xl p-4 font-semibold"
       >
         Finish Workout
@@ -1061,7 +1214,7 @@
     <!-- Header -->
     <header class="bg-surface px-3 pt-3 pb-2 border-b border-surface-light">
       <div class="flex items-center justify-between">
-        <button on:click={backToOverview} class="text-text-muted hover:text-text flex items-center gap-1" aria-label="Back to overview">
+        <button onclick={backToOverview} class="text-text-muted hover:text-text flex items-center gap-1" aria-label="Back to overview">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
           </svg>
@@ -1133,7 +1286,7 @@
         {#if currentExercise?.supportsBodyweightProgression}
           <div class="mb-4">
             <button
-              on:click={() => toggleProgressionMode(false)}
+              onclick={() => toggleProgressionMode(false)}
               class="text-sm px-3 py-1.5 bg-surface-light hover:bg-surface-light/80 rounded-lg text-text-muted transition-colors"
             >
               Switch to added weight →
@@ -1182,11 +1335,22 @@
             <div class="text-3xl font-bold">{currentSet.targetWeight} <span class="text-lg">kg</span></div>
           </div>
         {/if}
+        <!-- Edit Weight Button -->
+        <button
+          onclick={openEditWeightModal}
+          class="mb-4 flex items-center gap-2 text-sm text-primary hover:text-primary-dark px-3 py-1.5 bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+          Edit Weight
+        </button>
+        
         <!-- Progression Mode Toggle (for exercises that support it) -->
         {#if currentExercise?.supportsBodyweightProgression}
           <div class="mb-4">
             <button
-              on:click={() => toggleProgressionMode(true)}
+              onclick={() => toggleProgressionMode(true)}
               class="text-sm px-3 py-1.5 bg-surface-light hover:bg-surface-light/80 rounded-lg text-text-muted transition-colors"
             >
               ← Switch to bodyweight
@@ -1202,7 +1366,7 @@
           {#if !isTimerRunning && !timerCompleted}
             <!-- Ready to start -->
             <button
-              on:click={startExerciseTimer}
+              onclick={startExerciseTimer}
               class="w-44 h-44 rounded-full bg-surface hover:opacity-90 active:scale-95 transition-all flex flex-col items-center justify-center shadow-2xl shadow-surface-light/20 border-2 border-surface-light"
             >
               <svg class="w-16 h-16 text-primary mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1216,7 +1380,7 @@
           {:else if isTimerRunning}
             <!-- Timer running - tap to stop early (failure) -->
             <button
-              on:click={() => stopExerciseTimer(true)}
+              onclick={() => stopExerciseTimer(true)}
               class="w-44 h-44 rounded-full bg-warning hover:opacity-90 active:scale-95 transition-all flex flex-col items-center justify-center shadow-2xl shadow-warning/20 border-2 border-warning animate-pulse"
             >
               <span class="text-5xl font-bold text-white">{exerciseTimerRemaining}</span>
@@ -1249,8 +1413,8 @@
         <!-- Reps Counter - with long press for extra reps -->
         <div class="relative">
           <button
-            on:click={handleCircleTap}
-            on:mousedown={() => {
+            onclick={handleCircleTap}
+            onmousedown={() => {
               longPressTimer = setTimeout(() => {
                 // Long press: add extra rep and start rest timer
                 completedRepsCount++;
@@ -1261,19 +1425,19 @@
                 handleExtraRepComplete();
               }, LONG_PRESS_DURATION);
             }}
-            on:mouseup={() => {
+            onmouseup={() => {
               if (longPressTimer) {
                 clearTimeout(longPressTimer);
                 longPressTimer = null;
               }
             }}
-            on:mouseleave={() => {
+            onmouseleave={() => {
               if (longPressTimer) {
                 clearTimeout(longPressTimer);
                 longPressTimer = null;
               }
             }}
-            on:touchstart={() => {
+            ontouchstart={() => {
               longPressTimer = setTimeout(() => {
                 completedRepsCount++;
                 tapCount = 0;
@@ -1282,7 +1446,7 @@
                 handleExtraRepComplete();
               }, LONG_PRESS_DURATION);
             }}
-            on:touchend={() => {
+            ontouchend={() => {
               if (longPressTimer) {
                 clearTimeout(longPressTimer);
                 longPressTimer = null;
@@ -1334,7 +1498,7 @@
       <footer class="bg-surface border-t border-surface-light p-4">
         <div class="flex items-center justify-between">
           <button
-            on:click={skipSet}
+            onclick={skipSet}
             class="px-4 py-2 text-text-muted hover:text-text"
           >
             Skip Set
@@ -1351,7 +1515,7 @@
           {/if}
           
           <button
-            on:click={backToOverview}
+            onclick={backToOverview}
             class="px-4 py-2 text-primary hover:text-primary-dark font-medium"
           >
             Done
@@ -1364,20 +1528,20 @@
 
 <!-- Cancel Workout Modal -->
 {#if showCancelModal}
-  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" role="button" tabindex="0" on:click={() => showCancelModal = false} on:keydown={(e) => e.key === 'Enter' && (showCancelModal = false)}>
-    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" role="presentation" on:click|stopPropagation>
+  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" role="button" tabindex="0" onclick={() => showCancelModal = false} onkeydown={(e) => e.key === 'Enter' && (showCancelModal = false)}>
+    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" role="presentation" onclick={stopPropagation}>
       <h3 class="text-xl font-bold mb-2">Cancel Workout?</h3>
       <p class="text-text-muted mb-6">Your progress will be lost. This action cannot be undone.</p>
       
       <div class="flex gap-3">
         <button
-          on:click={() => showCancelModal = false}
+          onclick={() => showCancelModal = false}
           class="flex-1 px-4 py-3 bg-surface-light hover:bg-surface-light/80 rounded-xl font-medium"
         >
           Keep Working
         </button>
         <button
-          on:click={confirmCancel}
+          onclick={confirmCancel}
           class="flex-1 px-4 py-3 bg-danger hover:bg-danger/80 text-white rounded-xl font-medium"
         >
           Cancel
@@ -1390,8 +1554,8 @@
 <!-- Finish Early Modal -->
 {#if showFinishEarlyModal}
   {@const completedExercises = plan.filter(e => isExerciseComplete(e.exerciseId)).length}
-  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" role="button" tabindex="0" on:click={() => showFinishEarlyModal = false} on:keydown={(e) => e.key === 'Enter' && (showFinishEarlyModal = false)}>
-    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" role="presentation" on:click|stopPropagation>
+  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" role="button" tabindex="0" onclick={() => showFinishEarlyModal = false} onkeydown={(e) => e.key === 'Enter' && (showFinishEarlyModal = false)}>
+    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" role="presentation" onclick={stopPropagation}>
       <h3 class="text-xl font-bold mb-2">Finish Workout?</h3>
       <p class="text-text-muted mb-6">
         You've completed {completedExercises} of {plan.length} exercises. 
@@ -1400,13 +1564,13 @@
       
       <div class="flex gap-3">
         <button
-          on:click={() => showFinishEarlyModal = false}
+          onclick={() => showFinishEarlyModal = false}
           class="flex-1 px-4 py-3 bg-surface-light hover:bg-surface-light/80 rounded-xl font-medium"
         >
           Keep Going
         </button>
         <button
-          on:click={confirmFinishEarly}
+          onclick={confirmFinishEarly}
           class="flex-1 px-4 py-3 bg-primary hover:bg-primary-dark rounded-xl font-medium"
         >
           Finish
@@ -1419,20 +1583,20 @@
 
 <!-- Restore Workout Modal -->
 {#if showRestoreModal}
-  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" role="button" tabindex="0" on:keydown={(e) => e.key === 'Enter' && discardSavedWorkout()}>
-    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" role="presentation" on:click|stopPropagation>
+  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && discardSavedWorkout()}>
+    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" role="presentation" onclick={stopPropagation}>
       <h3 class="text-xl font-bold mb-2">Resume Workout?</h3>
       <p class="text-text-muted mb-6">You have a workout in progress. Would you like to resume where you left off?</p>
       
       <div class="flex gap-3">
         <button
-          on:click={discardSavedWorkout}
+          onclick={discardSavedWorkout}
           class="flex-1 px-4 py-3 bg-surface-light hover:bg-surface-light/80 rounded-xl font-medium"
         >
           Start New
         </button>
         <button
-          on:click={() => { const state = loadWorkoutState(); if (state) restoreWorkout(state); }}
+          onclick={() => { const state = loadWorkoutState(); if (state) restoreWorkout(state); }}
           class="flex-1 px-4 py-3 bg-primary hover:bg-primary-dark rounded-xl font-medium"
         >
           Resume
@@ -1442,6 +1606,59 @@
   </div>
 {/if}
 
+<!-- Edit Weight Modal -->
+{#if showEditWeightModal && currentSet && currentExercise}
+  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onclick={closeEditWeightModal}>
+    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" onclick={(e) => e.stopPropagation()}>
+      <h3 class="text-xl font-bold mb-2">Edit Weight</h3>
+      <p class="text-text-muted mb-4">
+        Adjust weight for {currentExercise.name}. This will update all remaining sets.
+      </p>
+      
+      <div class="mb-4">
+        <label class="block text-sm text-text-muted mb-2">New Weight (kg)</label>
+        <input
+          type="number"
+          bind:value={editWeightValue}
+          min="0"
+          max="500"
+          step="0.5"
+          class="w-full bg-surface-light rounded-xl p-4 text-2xl font-bold text-center focus:outline-none focus:ring-2 focus:ring-primary"
+          placeholder="Enter weight..."
+          onkeydown={(e) => e.key === 'Enter' && saveEditedWeight()}
+        />
+        {#if editWeightError}
+          <p class="text-danger text-sm mt-2">{editWeightError}</p>
+        {/if}
+      </div>
+      
+      <div class="bg-surface-light rounded-xl p-3 mb-4">
+        <div class="text-xs text-text-muted mb-1">Current</div>
+        <div class="font-semibold">{currentSet.targetWeight} kg</div>
+        {#if currentExercise.equipment.includes('barbell')}
+          <div class="text-sm text-text-muted">
+            Per side: {getPlateWeightPerSide(currentSet.targetWeight, currentSet.exerciseId)} kg
+          </div>
+        {/if}
+      </div>
+      
+      <div class="flex gap-3">
+        <button
+          onclick={closeEditWeightModal}
+          class="flex-1 px-4 py-3 bg-surface-light hover:bg-surface-light/80 rounded-xl font-medium"
+        >
+          Cancel
+        </button>
+        <button
+          onclick={saveEditedWeight}
+          class="flex-1 px-4 py-3 bg-primary hover:bg-primary-dark rounded-xl font-medium"
+        >
+          Save
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <!-- Workout Modification Modal -->
 <WorkoutModificationModal

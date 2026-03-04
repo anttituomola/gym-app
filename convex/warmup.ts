@@ -11,9 +11,12 @@ export interface WorkoutSet {
   type: 'warmup' | 'work';
   targetReps: number;
   targetWeight: number;
+  targetTimeSeconds?: number;
   completedReps?: number;
+  completedTimeSeconds?: number;
   completedAt?: number;
   failed: boolean;
+  skipped?: boolean;
 }
 
 export function calculateWarmupSets(exerciseId: string, workWeight: number): WorkoutSet[] {

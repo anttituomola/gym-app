@@ -68,8 +68,9 @@ export const EXERCISES: Exercise[] = [
     },
     warmupFormula: [
       { percentOfWork: 0, reps: 10 },
-      { percentOfWork: 0.50, reps: 3 },
-      { percentOfWork: 0.70, reps: 3 }
+      { percentOfWork: 0.40, reps: 5 },
+      { percentOfWork: 0.60, reps: 3 },
+      { percentOfWork: 0.80, reps: 1 }
     ]
   },
   {
@@ -84,9 +85,10 @@ export const EXERCISES: Exercise[] = [
       deloadPercent: 0.10
     },
     warmupFormula: [
+      { percentOfWork: 0, reps: 5 },
       { percentOfWork: 0.40, reps: 5 },
-      { percentOfWork: 0.60, reps: 3 }
-      // Note: deadlift typically has less warmup sets
+      { percentOfWork: 0.60, reps: 3 },
+      { percentOfWork: 0.80, reps: 1 }
     ]
   },
   // Alternative exercises for LLM substitutions
@@ -102,6 +104,7 @@ export const EXERCISES: Exercise[] = [
       deloadPercent: 0.10
     },
     warmupFormula: [
+      { percentOfWork: 0, reps: 10 },
       { percentOfWork: 0.50, reps: 8 },
       { percentOfWork: 0.75, reps: 3 }
     ]
@@ -118,6 +121,7 @@ export const EXERCISES: Exercise[] = [
       deloadPercent: 0.10
     },
     warmupFormula: [
+      { percentOfWork: 0, reps: 10 },
       { percentOfWork: 0.50, reps: 8 },
       { percentOfWork: 0.75, reps: 3 }
     ]
@@ -134,8 +138,9 @@ export const EXERCISES: Exercise[] = [
       deloadPercent: 0.10
     },
     warmupFormula: [
-      { percentOfWork: 0.60, reps: 5 },
-      { percentOfWork: 0.80, reps: 2 }
+      { percentOfWork: 0, reps: 10 },
+      { percentOfWork: 0.50, reps: 5 },
+      { percentOfWork: 0.75, reps: 3 }
     ]
   },
   {
@@ -150,8 +155,9 @@ export const EXERCISES: Exercise[] = [
       deloadPercent: 0.10
     },
     warmupFormula: [
-      { percentOfWork: 0.40, reps: 5 },
-      { percentOfWork: 0.60, reps: 3 }
+      { percentOfWork: 0, reps: 10 },
+      { percentOfWork: 0.50, reps: 5 },
+      { percentOfWork: 0.75, reps: 3 }
     ]
   },
   {
@@ -181,6 +187,7 @@ export const EXERCISES: Exercise[] = [
       deloadPercent: 0.10
     },
     warmupFormula: [
+      { percentOfWork: 0, reps: 5 },
       { percentOfWork: 0.50, reps: 3 }
     ],
     supportsBodyweightProgression: true,
@@ -312,7 +319,9 @@ export const EXERCISES: Exercise[] = [
       deloadPercent: 0.10
     },
     warmupFormula: [
-      { percentOfWork: 0.60, reps: 5 }
+      { percentOfWork: 0, reps: 10 },
+      { percentOfWork: 0.50, reps: 8 },
+      { percentOfWork: 0.75, reps: 5 }
     ]
   },
   {

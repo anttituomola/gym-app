@@ -114,7 +114,7 @@
           <p class="text-xs mt-2 text-text-muted">{debugInfo}</p>
         </div>
         <button
-          on:click={() => goto('/login')}
+          onclick={() => goto('/login')}
           class="w-full bg-primary hover:bg-primary-dark transition-all rounded-xl p-3 font-semibold"
         >
           Back to Sign In

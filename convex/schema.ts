@@ -139,6 +139,7 @@ export default defineSchema({
         sets: v.number(),
         reps: v.number(),
         weight: v.number(),
+        timeSeconds: v.optional(v.number()),
       })
     ),
     sets: v.array(
@@ -169,6 +170,7 @@ export default defineSchema({
             sets: v.number(),
             reps: v.number(),
             weight: v.number(),
+            timeSeconds: v.optional(v.number()),
           })
         ),
       })
@@ -176,4 +178,28 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_user_status", ["userId", "status"]),
+
+  // Equipment and custom exercises (user-created via AI recognition)
+  equipments: defineTable({
+    userId: v.id("users"),
+    name: v.string(),                // "Cable Crossover Machine"
+    normalizedName: v.string(),      // "cable-crossover-machine" (for dedup)
+    category: v.union(
+      v.literal("barbell"),
+      v.literal("dumbbell"),
+      v.literal("machine"),
+      v.literal("cable"),
+      v.literal("kettlebell"),
+      v.literal("cardio"),
+      v.literal("bodyweight"),
+      v.literal("other")
+    ),
+    description: v.optional(v.string()),
+    imageStorageIds: v.optional(v.array(v.id("_storage"))), // 1-3 images
+    isCustom: v.boolean(),           // Always true for user-created
+    recognitionConfidence: v.optional(v.number()), // AI confidence 0-1
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_normalized", ["userId", "normalizedName"]),
 });

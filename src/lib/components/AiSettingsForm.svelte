@@ -1,16 +1,17 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { aiSettingsStore, aiAvailable, testAiConnection, getAiToken } from '$lib/stores/aiSettings';
+  import { detectProviderFromKey, getDefaultModel } from '$lib/services/equipmentRecognition';
   import type { LlmConfig } from '$lib/types/ai';
   
   // Local state
-  let provider: 'openai' | 'anthropic' = 'openai';
   let apiKey = '';
   let showKey = false;
   let isTesting = false;
   let testResult: { success: boolean; message: string } | null = null;
   let isSaving = false;
   let hasExistingKey = false;
+  let detectedProvider: 'openai' | 'anthropic' | null = null;
   
   // Initialize from store
   onMount(() => {
@@ -19,17 +20,32 @@
     // Check if there's an existing token
     const token = getAiToken();
     hasExistingKey = !!token;
-    
-    // Set provider from store if available
-    if ($aiSettingsStore.provider) {
-      provider = $aiSettingsStore.provider;
-    }
   });
+  
+  // Auto-detect provider when API key changes
+  $: {
+    if (apiKey.trim()) {
+      detectedProvider = detectProviderFromKey(apiKey.trim());
+    } else {
+      detectedProvider = null;
+    }
+  }
+  
+  // Get provider from key (either detected or stored)
+  function getProvider(): 'openai' | 'anthropic' | null {
+    return detectedProvider || $aiSettingsStore.provider;
+  }
   
   // Test the API connection
   async function handleTest() {
     if (!apiKey.trim()) {
       testResult = { success: false, message: 'Please enter an API key' };
+      return;
+    }
+    
+    const provider = getProvider();
+    if (!provider) {
+      testResult = { success: false, message: 'Could not detect provider from API key format. Please check your key.' };
       return;
     }
     
@@ -46,7 +62,7 @@
     testResult = {
       success: result.success,
       message: result.success 
-        ? 'Connection successful! API key is valid.' 
+        ? `Connection successful! Detected ${provider === 'openai' ? 'OpenAI' : 'Anthropic'} (${getDefaultModel(provider)}).`
         : result.error || 'Connection failed',
     };
     
@@ -60,13 +76,20 @@
       return;
     }
     
+    const provider = getProvider();
+    if (!provider) {
+      testResult = { success: false, message: 'Could not detect provider from API key format. Please check your key.' };
+      return;
+    }
+    
     isSaving = true;
     
     try {
       aiSettingsStore.setToken(apiKey.trim(), provider);
-      testResult = { success: true, message: 'Settings saved successfully!' };
+      testResult = { success: true, message: `Settings saved! Using ${provider === 'openai' ? 'OpenAI' : 'Anthropic'} (${getDefaultModel(provider)}).` };
       hasExistingKey = true;
       apiKey = ''; // Clear the input for security
+      detectedProvider = null;
     } catch (e) {
       testResult = { 
         success: false, 
@@ -104,7 +127,7 @@
     
     {#if $aiSettingsStore.hasToken}
       <button
-        on:click={toggleEnabled}
+        onclick={toggleEnabled}
         class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors {
           $aiSettingsStore.enabled ? 'bg-primary' : 'bg-surface-light'
         }"
@@ -114,7 +137,7 @@
           class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {
             $aiSettingsStore.enabled ? 'translate-x-6' : 'translate-x-1'
           }"
-        />
+        ></span>
       </button>
     {/if}
   </div>
@@ -125,47 +148,19 @@
   
   {#if !$aiSettingsStore.hasToken}
     <div class="bg-surface-light rounded-xl p-4 space-y-4">
-      <!-- Provider Selection -->
-      <div>
-        <label class="text-sm font-medium mb-2 block">AI Provider</label>
-        <div class="flex gap-2">
-          <button
-            on:click={() => provider = 'openai'}
-            class="flex-1 p-3 rounded-xl border-2 transition-all {
-              provider === 'openai' 
-                ? 'border-primary bg-primary/10' 
-                : 'border-surface-light hover:border-text-muted'
-            }"
-          >
-            <div class="font-semibold">OpenAI</div>
-            <div class="text-xs text-text-muted">GPT-4o Mini</div>
-          </button>
-          <button
-            on:click={() => provider = 'anthropic'}
-            class="flex-1 p-3 rounded-xl border-2 transition-all {
-              provider === 'anthropic' 
-                ? 'border-primary bg-primary/10' 
-                : 'border-surface-light hover:border-text-muted'
-            }"
-          >
-            <div class="font-semibold">Anthropic</div>
-            <div class="text-xs text-text-muted">Claude 3 Haiku</div>
-          </button>
-        </div>
-      </div>
-      
       <!-- API Key Input -->
       <div>
-        <label class="text-sm font-medium mb-2 block">API Key</label>
+        <label for="api-key-input" class="text-sm font-medium mb-2 block">API Key</label>
         <div class="relative">
           <input
+            id="api-key-input"
             type={showKey ? 'text' : 'password'}
             bind:value={apiKey}
-            placeholder={provider === 'openai' ? 'sk-...' : 'sk-ant-...'}
+            placeholder="Paste your OpenAI or Anthropic API key..."
             class="w-full bg-bg rounded-xl px-4 py-3 pr-10"
           />
           <button
-            on:click={() => showKey = !showKey}
+            onclick={() => showKey = !showKey}
             class="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text"
             aria-label={showKey ? 'Hide key' : 'Show key'}
           >
@@ -184,6 +179,21 @@
         <p class="text-xs text-text-muted mt-1">
           Your key is stored locally in your browser's localStorage.
         </p>
+        
+        <!-- Auto-detection indicator -->
+        {#if detectedProvider}
+          <div class="mt-2 flex items-center gap-2 text-sm">
+            <span class="text-success">✓</span>
+            <span class="text-text">
+              Detected: <strong>{detectedProvider === 'openai' ? 'OpenAI' : 'Anthropic'}</strong>
+              ({getDefaultModel(detectedProvider)})
+            </span>
+          </div>
+        {:else if apiKey.trim()}
+          <div class="mt-2 text-sm text-warning">
+            ⚠️ Could not detect provider. Key should start with "sk-" (OpenAI) or "sk-ant-" (Anthropic).
+          </div>
+        {/if}
       </div>
       
       <!-- Test Result -->
@@ -200,14 +210,14 @@
       <!-- Actions -->
       <div class="flex gap-2">
         <button
-          on:click={handleTest}
+          onclick={handleTest}
           disabled={!apiKey.trim() || isTesting}
           class="flex-1 py-3 bg-surface-light hover:bg-surface-light/80 disabled:opacity-50 rounded-xl font-medium"
         >
           {isTesting ? 'Testing...' : 'Test Connection'}
         </button>
         <button
-          on:click={handleSave}
+          onclick={handleSave}
           disabled={!apiKey.trim() || isSaving}
           class="flex-1 py-3 bg-primary hover:bg-primary-dark disabled:opacity-50 rounded-xl font-semibold"
         >
@@ -219,26 +229,24 @@
     <!-- Help Links -->
     <div class="mt-4 text-sm text-text-muted space-y-1">
       <p>
-        Don't have an API key?
-        {#if provider === 'openai'}
-          <a 
-            href="https://platform.openai.com/api-keys" 
-            target="_blank" 
-            rel="noopener"
-            class="text-primary hover:underline"
-          >
-            Get one from OpenAI →
-          </a>
-        {:else}
-          <a 
-            href="https://console.anthropic.com/settings/keys" 
-            target="_blank" 
-            rel="noopener"
-            class="text-primary hover:underline"
-          >
-            Get one from Anthropic →
-          </a>
-        {/if}
+        Don't have an API key? Get one from 
+        <a 
+          href="https://platform.openai.com/api-keys" 
+          target="_blank" 
+          rel="noopener"
+          class="text-primary hover:underline"
+        >
+          OpenAI
+        </a>
+        or
+        <a 
+          href="https://console.anthropic.com/settings/keys" 
+          target="_blank" 
+          rel="noopener"
+          class="text-primary hover:underline"
+        >
+          Anthropic →
+        </a>
       </p>
       <p class="text-xs">
         Costs approximately $0.01-0.02 per workout modification.
@@ -257,7 +265,7 @@
         Status: { $aiSettingsStore.enabled ? 'Enabled' : 'Disabled' }
       </p>
       <button
-        on:click={handleClear}
+        onclick={handleClear}
         class="text-sm text-danger hover:underline"
       >
         Remove API Key

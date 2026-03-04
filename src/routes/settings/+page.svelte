@@ -4,6 +4,16 @@
   import type { UserExerciseSettings } from '$lib/types';
   import ImportStronglifts from '$lib/components/ImportStronglifts.svelte';
   import AiSettingsForm from '$lib/components/AiSettingsForm.svelte';
+  import EquipmentPhotoCapture from '$lib/components/equipment/EquipmentPhotoCapture.svelte';
+  import EquipmentReviewModal from '$lib/components/equipment/EquipmentReviewModal.svelte';
+  import { recognizeEquipment } from '$lib/services/equipmentRecognition';
+  import type { 
+    CapturedImage, 
+    EquipmentRecognitionResponse,
+    EquipmentDeduplicationResult,
+    Equipment,
+  } from '$lib/types/equipment';
+  import { aiSettingsStore, getLlmConfig } from '$lib/stores/aiSettings';
   import { onMount } from 'svelte';
   import { convex, api, authStore } from '$lib/convex';
   
@@ -21,12 +31,34 @@
   let unitSaveStatus: 'idle' | 'saving' | 'saved' = $state('idle');
   let unitPreference = $state({ weightUnit: 'kg' as 'kg' | 'lbs', distanceUnit: 'cm' as 'cm' | 'inches' });
   
+  // Equipment photo capture state
+  let showPhotoCapture = $state(false);
+  let showReviewModal = $state(false);
+  let capturedImages: CapturedImage[] = $state([]);
+  let recognitionResult: EquipmentRecognitionResponse | null = $state(null);
+  let dedupResult: EquipmentDeduplicationResult | null = $state(null);
+  let isAnalyzing = $state(false);
+  let isSaving = $state(false);
+  let analysisError: string | null = $state(null);
+  let userEquipments: Equipment[] = $state([]);
+  
   // Load profile when user is available
   $effect(() => {
     if ($authStore.userId && loading) {
       loadProfile();
+      loadUserEquipments();
     }
   });
+  
+  async function loadUserEquipments() {
+    if (!$authStore.userId) return;
+    try {
+      userEquipments = await convex.query(api.equipments.getUserEquipments);
+    } catch (err) {
+      console.error('Failed to load equipment:', err);
+      userEquipments = [];
+    }
+  }
   
   async function loadProfile() {
     if (!$authStore.userId) return;
@@ -250,6 +282,111 @@
       console.error('Import error:', err);
     }
   }
+  
+  // Equipment photo capture handlers
+  async function handleImagesCaptured(images: CapturedImage[]) {
+    capturedImages = images;
+    showPhotoCapture = false;
+    isAnalyzing = true;
+    analysisError = null;
+    
+    try {
+      // Get AI settings
+      const llmConfig = getLlmConfig();
+      if (!llmConfig) {
+        throw new Error('AI not configured. Please set up AI settings first.');
+      }
+      
+      // Call AI recognition
+      const result = await recognizeEquipment(
+        { images: images.map(img => ({ base64: img.base64, mimeType: img.mimeType })) },
+        llmConfig
+      );
+      
+      recognitionResult = result;
+      
+      // Check deduplication
+      const dedup = await convex.query(api.equipments.checkEquipmentDeduplication, {
+        normalizedName: result.equipment.normalizedName,
+      });
+      
+      dedupResult = dedup;
+      showReviewModal = true;
+    } catch (err) {
+      analysisError = err instanceof Error ? err.message : 'Analysis failed';
+      console.error('Analysis error:', err);
+      // Show error and allow retry
+      showPhotoCapture = true;
+    } finally {
+      isAnalyzing = false;
+    }
+  }
+  
+  async function handleSaveEquipment(data: {
+    name: string;
+    normalizedName: string;
+    category: typeof import('$lib/types/equipment').EQUIPMENT_CATEGORIES[number];
+    description?: string;
+    recognitionConfidence: number;
+  }) {
+    if (!$authStore.userId) return;
+    
+    isSaving = true;
+    
+    try {
+      // Store images in Convex storage
+      const imageData = capturedImages.map(img => ({
+        base64: img.base64,
+        mimeType: img.mimeType,
+      }));
+      
+      const storageIds = await convex.action(api.equipments.storeEquipmentImages, {
+        images: imageData,
+      });
+      
+      // Save equipment
+      await convex.mutation(api.equipments.saveEquipment, {
+        name: data.name,
+        normalizedName: data.normalizedName,
+        category: data.category,
+        description: data.description,
+        imageStorageIds: storageIds,
+        recognitionConfidence: data.recognitionConfidence,
+      });
+      
+      // Refresh equipment list
+      await loadUserEquipments();
+      
+      // Close modal and reset state
+      showReviewModal = false;
+      capturedImages = [];
+      recognitionResult = null;
+      dedupResult = null;
+      
+      // Show success message (could add a toast here)
+    } catch (err) {
+      console.error('Save error:', err);
+      alert(err instanceof Error ? err.message : 'Failed to save equipment');
+    } finally {
+      isSaving = false;
+    }
+  }
+  
+  function handleCancelCapture() {
+    showPhotoCapture = false;
+    // Clean up preview URLs
+    capturedImages.forEach(img => URL.revokeObjectURL(img.previewUrl));
+    capturedImages = [];
+  }
+  
+  function handleCancelReview() {
+    showReviewModal = false;
+    // Clean up
+    capturedImages.forEach(img => URL.revokeObjectURL(img.previewUrl));
+    capturedImages = [];
+    recognitionResult = null;
+    dedupResult = null;
+  }
 </script>
 
 <svelte:head>
@@ -297,13 +434,13 @@
               <span class="text-sm text-text-muted">Progression:</span>
               <div class="flex bg-surface-light rounded-lg p-1">
                 <button
-                  on:click={() => toggleBodyweightProgression(exercise.id, true)}
+                  onclick={() => toggleBodyweightProgression(exercise.id, true)}
                   class="px-3 py-1 text-sm rounded-md transition-all {useBodyweight ? 'bg-primary text-white' : 'text-text-muted'}"
                 >
                   Bodyweight
                 </button>
                 <button
-                  on:click={() => toggleBodyweightProgression(exercise.id, false)}
+                  onclick={() => toggleBodyweightProgression(exercise.id, false)}
                   class="px-3 py-1 text-sm rounded-md transition-all {!useBodyweight ? 'bg-primary text-white' : 'text-text-muted'}"
                 >
                   Added Weight
@@ -320,11 +457,11 @@
                     <input
                       type="number"
                       value={settings?.targetReps || exercise.defaultReps || 10}
-                      on:blur={(e) => {
+                      onblur={(e) => {
                         updateTargetReps(exercise.id, parseInt(e.currentTarget.value));
                         editingExercise = null;
                       }}
-                      on:keydown={(e) => {
+                      onkeydown={(e) => {
                         if (e.key === 'Enter') {
                           updateTargetReps(exercise.id, parseInt(e.currentTarget.value));
                           editingExercise = null;
@@ -338,7 +475,7 @@
                   </div>
                 {:else}
                   <button
-                    on:click={() => editingExercise = exercise.id}
+                    onclick={() => editingExercise = exercise.id}
                     class="text-right px-3 py-1 bg-surface-light rounded-lg"
                   >
                     <span class="font-semibold">{settings?.targetReps || exercise.defaultReps || 10}</span>
@@ -354,11 +491,11 @@
                     <input
                       type="number"
                       value={settings?.incrementReps || exercise.defaultIncrementReps || 1}
-                      on:blur={(e) => {
+                      onblur={(e) => {
                         updateIncrementReps(exercise.id, parseInt(e.currentTarget.value));
                         editingIncrement = null;
                       }}
-                      on:keydown={(e) => {
+                      onkeydown={(e) => {
                         if (e.key === 'Enter') {
                           updateIncrementReps(exercise.id, parseInt(e.currentTarget.value));
                           editingIncrement = null;
@@ -374,7 +511,7 @@
                   </div>
                 {:else}
                   <button
-                    on:click={() => editingIncrement = exercise.id}
+                    onclick={() => editingIncrement = exercise.id}
                     class="text-right px-3 py-1 bg-surface-light rounded-lg"
                   >
                     <span class="text-sm text-text-muted">+</span>
@@ -392,11 +529,11 @@
                     <input
                       type="number"
                       value={settings?.currentWeight || 0}
-                      on:blur={(e) => {
+                      onblur={(e) => {
                         updateWeight(exercise.id, parseFloat(e.currentTarget.value));
                         editingExercise = null;
                       }}
-                      on:keydown={(e) => {
+                      onkeydown={(e) => {
                         if (e.key === 'Enter') {
                           updateWeight(exercise.id, parseFloat(e.currentTarget.value));
                           editingExercise = null;
@@ -410,7 +547,7 @@
                   </div>
                 {:else}
                   <button
-                    on:click={() => editingExercise = exercise.id}
+                    onclick={() => editingExercise = exercise.id}
                     class="text-right px-3 py-1 bg-surface-light rounded-lg"
                   >
                     <span class="font-semibold">{settings?.currentWeight || 0}</span>
@@ -443,11 +580,11 @@
                 <input
                   type="number"
                   value={settings?.currentWeight || 20}
-                  on:blur={(e) => {
+                  onblur={(e) => {
                     updateWeight(exercise.id, parseFloat(e.currentTarget.value));
                     editingExercise = null;
                   }}
-                  on:keydown={(e) => {
+                  onkeydown={(e) => {
                     if (e.key === 'Enter') {
                       updateWeight(exercise.id, parseFloat(e.currentTarget.value));
                       editingExercise = null;
@@ -461,7 +598,7 @@
               </div>
             {:else}
               <button
-                on:click={() => editingExercise = exercise.id}
+                onclick={() => editingExercise = exercise.id}
                 class="text-right px-3 py-1 bg-surface-light rounded-lg"
               >
                 <span class="font-semibold">{settings?.currentWeight || 20}</span>
@@ -488,7 +625,7 @@
       <div class="grid grid-cols-2 gap-2">
         {#each EQUIPMENT_LIST as equipment}
           <button
-            on:click={() => toggleEquipment(equipment)}
+            onclick={() => toggleEquipment(equipment)}
             class="p-3 rounded-xl text-left transition-all {
               selectedEquipment.includes(equipment)
                 ? 'bg-primary text-white'
@@ -504,6 +641,100 @@
           </button>
         {/each}
       </div>
+    </section>
+    
+    <!-- Equipment from Photo -->
+    <section class="bg-surface rounded-xl p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold">Equipment from Photo</h2>
+        {#if isAnalyzing}
+          <span class="text-xs text-text-muted">Analyzing...</span>
+        {/if}
+      </div>
+      <p class="text-sm text-text-muted mb-4">
+        Take a photo of your gym equipment and AI will identify it and suggest exercises
+      </p>
+      
+      {#if !$aiSettingsStore.hasToken}
+        <div class="bg-warning/20 border border-warning/30 rounded-xl p-4 mb-4">
+          <p class="text-sm text-warning">
+            ⚠️ AI not configured. Please set up your API key in AI Settings above to use this feature.
+          </p>
+        </div>
+      {/if}
+      
+      <!-- Add Equipment Button -->
+      <button
+        onclick={() => showPhotoCapture = true}
+        disabled={!$aiSettingsStore.hasToken || isAnalyzing}
+        class="w-full p-4 bg-primary/10 border border-primary/30 rounded-xl text-left transition-all hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <div class="flex items-center gap-3">
+          <div class="text-2xl">📷</div>
+          <div class="flex-1">
+            <div class="font-medium text-primary">
+              {isAnalyzing ? 'Analyzing...' : 'Add Equipment by Photo'}
+            </div>
+            <div class="text-sm text-text-muted">
+              {isAnalyzing ? 'Please wait while AI analyzes your photos' : 'Take 1-3 photos for best results'}
+            </div>
+          </div>
+          {#if isAnalyzing}
+            <div class="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+          {:else}
+            <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+          {/if}
+        </div>
+      </button>
+      
+      <!-- User's Custom Equipment Gallery -->
+      {#if userEquipments.length > 0}
+        <div class="mt-4">
+          <p class="text-sm font-medium mb-2">Your Equipment ({userEquipments.length})</p>
+          <div class="grid grid-cols-2 gap-2">
+            {#each userEquipments.slice(0, 4) as equipment}
+              <div class="bg-surface-light rounded-xl p-3">
+                <div class="flex items-center gap-2">
+                  <span class="text-xl">
+                    {#if equipment.category === 'cardio'}
+                      🏃
+                    {:else if equipment.category === 'machine'}
+                      🏋️
+                    {:else if equipment.category === 'cable'}
+                      🔧
+                    {:else if equipment.category === 'dumbbell'}
+                      🏋️‍♀️
+                    {:else if equipment.category === 'barbell'}
+                      🏋️‍♂️
+                    {:else if equipment.category === 'kettlebell'}
+                      💪
+                    {:else}
+                      🎯
+                    {/if}
+                  </span>
+                  <div class="min-w-0">
+                    <p class="text-sm font-medium truncate">{equipment.name}</p>
+                    <p class="text-xs text-text-muted capitalize">{equipment.category}</p>
+                  </div>
+                </div>
+              </div>
+            {/each}
+            {#if userEquipments.length > 4}
+              <div class="bg-surface-light rounded-xl p-3 flex items-center justify-center">
+                <span class="text-sm text-text-muted">+{userEquipments.length - 4} more</span>
+              </div>
+            {/if}
+          </div>
+        </div>
+      {/if}
+      
+      {#if analysisError}
+        <div class="mt-3 bg-danger/20 text-danger rounded-lg p-3 text-sm">
+          {analysisError}
+        </div>
+      {/if}
     </section>
     
     <!-- Unit Preference -->
@@ -523,13 +754,13 @@
           <label class="block text-sm font-medium mb-2">Weight Display</label>
           <div class="flex bg-surface-light rounded-lg p-1">
             <button
-              on:click={() => updateUnitPreference('kg')}
+              onclick={() => updateUnitPreference('kg')}
               class="flex-1 px-4 py-2 text-sm rounded-md transition-all {unitPreference.weightUnit === 'kg' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'}"
             >
               Kilograms (kg)
             </button>
             <button
-              on:click={() => updateUnitPreference('lbs')}
+              onclick={() => updateUnitPreference('lbs')}
               class="flex-1 px-4 py-2 text-sm rounded-md transition-all {unitPreference.weightUnit === 'lbs' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'}"
             >
               Pounds (lbs)
@@ -582,3 +813,27 @@
     
   </main>
 </div>
+
+<!-- Photo Capture Modal -->
+{#if showPhotoCapture}
+  <div class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+    <div class="w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <EquipmentPhotoCapture
+        onImagesCaptured={handleImagesCaptured}
+        onCancel={handleCancelCapture}
+      />
+    </div>
+  </div>
+{/if}
+
+<!-- Review Modal -->
+{#if showReviewModal && recognitionResult && dedupResult}
+  <EquipmentReviewModal
+    images={capturedImages}
+    recognition={recognitionResult}
+    deduplication={dedupResult}
+    onSave={handleSaveEquipment}
+    onCancel={handleCancelReview}
+    isSaving={isSaving}
+  />
+{/if}

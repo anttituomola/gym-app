@@ -1,8 +1,10 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
+  import { stopPropagation } from 'svelte/legacy';
   import { convex, api, authStore } from '$lib/convex';
   import type { TrainingProgram } from '$lib/types';
+  import { formatDate } from '$lib/utils/date';
   
   let programs: TrainingProgram[] = [];
   let loading = true;
@@ -127,8 +129,8 @@
     errorMessage = '';
   }
   
-  function formatDate(timestamp: number): string {
-    return new Date(timestamp).toLocaleDateString();
+  function formatDateLocal(timestamp: number): string {
+    return formatDate(timestamp);
   }
 </script>
 
@@ -141,7 +143,7 @@
   <header class="bg-surface p-4 border-b border-surface-light">
     <div class="flex items-center justify-between">
       <button 
-        on:click={() => goto('/')}
+        onclick={() => goto('/')}
         class="text-text-muted hover:text-text flex items-center gap-1"
       >
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -158,7 +160,7 @@
   <main class="flex-1 p-4 pb-24">
     <!-- Create Button -->
     <button
-      on:click={createNewProgram}
+      onclick={createNewProgram}
       class="w-full bg-primary hover:bg-primary-dark active:scale-95 transition-all rounded-xl p-4 mb-6 flex items-center justify-center gap-2"
     >
       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -191,7 +193,7 @@
         <h2 class="text-lg font-semibold mb-2">No Programs Yet</h2>
         <p class="text-text-muted mb-6">Create your first training program to get started</p>
         <button
-          on:click={createNewProgram}
+          onclick={createNewProgram}
           class="bg-surface-light hover:bg-surface-light/80 active:scale-95 transition-all rounded-xl px-6 py-3"
         >
           Create Program
@@ -209,7 +211,7 @@
                 {/if}
                 <p class="text-text-muted text-xs mt-1">
                   {program.workouts.length} workout{program.workouts.length !== 1 ? 's' : ''} • 
-                  Created {formatDate(program.createdAt)}
+                  Created {formatDateLocal(program.createdAt)}
                 </p>
               </div>
               {#if program.isActive}
@@ -231,28 +233,28 @@
             <!-- Actions -->
             <div class="flex gap-2">
               <button
-                on:click={() => editProgram(program.id)}
+                onclick={() => editProgram(program.id)}
                 class="flex-1 bg-surface-light hover:bg-surface-light/80 active:scale-95 transition-all rounded-lg py-2 text-sm"
               >
                 Edit
               </button>
               {#if program.isActive}
                 <button
-                  on:click={deactivatePrograms}
+                  onclick={deactivatePrograms}
                   class="flex-1 bg-primary/20 hover:bg-primary/30 text-primary active:scale-95 transition-all rounded-lg py-2 text-sm font-medium"
                 >
                   Deactivate
                 </button>
               {:else}
                 <button
-                  on:click={() => activateProgram(program.id)}
+                  onclick={() => activateProgram(program.id)}
                   class="flex-1 bg-primary/20 hover:bg-primary/30 text-primary active:scale-95 transition-all rounded-lg py-2 text-sm font-medium"
                 >
                   Activate
                 </button>
               {/if}
               <button
-                on:click={() => confirmDelete(program.id)}
+                onclick={() => confirmDelete(program.id)}
                 class="px-3 py-2 text-danger hover:bg-danger/10 rounded-lg transition-colors"
                 aria-label="Delete"
               >
@@ -270,20 +272,20 @@
 
 <!-- Delete Confirmation Modal -->
 {#if showDeleteModal}
-  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" role="button" tabindex="0" on:click={cancelDelete} on:keydown={(e) => e.key === 'Enter' && cancelDelete()}>
-    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" role="presentation" on:click|stopPropagation>
+  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" role="button" tabindex="0" onclick={cancelDelete} onkeydown={(e) => e.key === 'Enter' && cancelDelete()}>
+    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" role="presentation" onclick={stopPropagation}>
       <h3 class="text-xl font-bold mb-2">Delete Program?</h3>
       <p class="text-text-muted mb-6">This action cannot be undone. The program will be permanently removed.</p>
       
       <div class="flex gap-3">
         <button
-          on:click={cancelDelete}
+          onclick={cancelDelete}
           class="flex-1 px-4 py-3 bg-surface-light hover:bg-surface-light/80 rounded-xl font-medium"
         >
           Cancel
         </button>
         <button
-          on:click={executeDelete}
+          onclick={executeDelete}
           class="flex-1 px-4 py-3 bg-danger hover:bg-danger/80 text-white rounded-xl font-medium"
         >
           Delete
@@ -295,13 +297,13 @@
 
 <!-- Error Modal -->
 {#if showErrorModal}
-  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" role="button" tabindex="0" on:click={closeError} on:keydown={(e) => e.key === 'Enter' && closeError()}>
-    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" role="presentation" on:click|stopPropagation>
+  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" role="button" tabindex="0" onclick={closeError} onkeydown={(e) => e.key === 'Enter' && closeError()}>
+    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" role="presentation" onclick={stopPropagation}>
       <h3 class="text-xl font-bold mb-2">Error</h3>
       <p class="text-text-muted mb-6">{errorMessage}</p>
       
       <button
-        on:click={closeError}
+        onclick={closeError}
         class="w-full px-4 py-3 bg-primary hover:bg-primary-dark rounded-xl font-medium"
       >
         OK

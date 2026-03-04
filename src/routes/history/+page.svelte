@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { convex, api, authStore } from '$lib/convex';
+  import { formatDate } from '$lib/utils/date';
   
   let workouts: any[] = $state([]);
   let loading = $state(true);
@@ -65,7 +66,7 @@
         <h2 class="text-lg font-semibold mb-2">No workouts yet</h2>
         <p class="text-text-muted mb-4">Complete your first workout to see history here</p>
         <button
-          on:click={() => goto('/')}
+          onclick={() => goto('/')}
           class="bg-primary hover:bg-primary-dark px-6 py-2 rounded-xl font-medium"
         >
           Start Workout
@@ -89,7 +90,7 @@
                 <span class="text-sm text-text-muted ml-2">({completedSets}/{totalSets} sets)</span>
               </div>
               <span class="text-sm text-text-muted">
-                {new Date(workout.startedAt).toLocaleDateString()}
+                {formatDate(workout.startedAt)}
               </span>
             </div>
             {#if totalVolume > 0}

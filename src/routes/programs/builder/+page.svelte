@@ -2,6 +2,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
+  import { stopPropagation } from 'svelte/legacy';
   import { EXERCISES } from '$lib/data/exercises';
   import { convex, api, authStore } from '$lib/convex';
   import type { ProgramWorkout, ProgramExercise, Exercise, UserExerciseSettings } from '$lib/types';
@@ -314,7 +315,7 @@
   <header class="bg-surface p-4 border-b border-surface-light">
     <div class="flex items-center justify-between">
       <button 
-        on:click={() => goto('/programs')}
+        onclick={() => goto('/programs')}
         class="text-text-muted hover:text-text flex items-center gap-1"
         disabled={saving}
       >
@@ -325,7 +326,7 @@
       </button>
       <h1 class="text-xl font-bold">Program Builder</h1>
       <button
-        on:click={saveProgram}
+        onclick={saveProgram}
         disabled={saving}
         class="text-primary hover:text-primary-dark font-medium text-sm disabled:opacity-50"
       >
@@ -370,7 +371,7 @@
       <div class="flex items-center gap-2 overflow-x-auto pb-2">
         {#each workouts as workout, index}
           <button
-            on:click={() => activeTab = index}
+            onclick={() => activeTab = index}
             disabled={saving}
             class="px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-colors {activeTab === index ? 'bg-primary text-white' : 'bg-surface text-text-muted hover:text-text'} disabled:opacity-50"
           >
@@ -379,7 +380,7 @@
         {/each}
         <button
           type="button"
-          on:click={() => addWorkout()}
+          onclick={() => addWorkout()}
           disabled={saving}
           class="px-4 py-2.5 rounded-lg bg-surface text-text-muted hover:text-text hover:bg-surface-light transition-colors disabled:opacity-50 flex items-center gap-2 font-medium min-h-[44px] select-none whitespace-nowrap"
         >
@@ -406,7 +407,7 @@
             />
             {#if workouts.length > 1}
               <button
-                on:click={() => confirmRemoveWorkout(activeTab)}
+                onclick={() => confirmRemoveWorkout(activeTab)}
                 disabled={saving}
                 class="p-2 text-danger hover:bg-danger/10 rounded-lg transition-colors disabled:opacity-50"
                 aria-label="Remove workout"
@@ -450,7 +451,7 @@
                 </div>
                 <div class="flex gap-1">
                   <button
-                    on:click={() => moveExercise(activeTab, exerciseIndex, 'up')}
+                    onclick={() => moveExercise(activeTab, exerciseIndex, 'up')}
                     disabled={saving || exerciseIndex === 0}
                     class="p-1.5 text-text-muted hover:text-text hover:bg-surface-light rounded-lg transition-colors disabled:opacity-30"
                     aria-label="Move exercise up"
@@ -460,7 +461,7 @@
                     </svg>
                   </button>
                   <button
-                    on:click={() => moveExercise(activeTab, exerciseIndex, 'down')}
+                    onclick={() => moveExercise(activeTab, exerciseIndex, 'down')}
                     disabled={saving || exerciseIndex === workout.exercises.length - 1}
                     class="p-1.5 text-text-muted hover:text-text hover:bg-surface-light rounded-lg transition-colors disabled:opacity-30"
                     aria-label="Move exercise down"
@@ -470,7 +471,7 @@
                     </svg>
                   </button>
                   <button
-                    on:click={() => removeExercise(activeTab, exerciseIndex)}
+                    onclick={() => removeExercise(activeTab, exerciseIndex)}
                     disabled={saving}
                     class="p-1.5 text-danger hover:bg-danger/10 rounded-lg transition-colors disabled:opacity-50"
                     aria-label="Remove exercise"
@@ -490,7 +491,7 @@
                   <div class="flex bg-surface-light rounded-lg p-0.5 flex-1">
                     <button
                       type="button"
-                      on:click={() => toggleBodyweightProgression(exercise.exerciseId, true)}
+                      onclick={() => toggleBodyweightProgression(exercise.exerciseId, true)}
                       disabled={saving}
                       class="flex-1 px-2 py-1 text-xs rounded-md transition-all {useBodyweight ? 'bg-primary text-white' : 'text-text-muted'}"
                     >
@@ -498,7 +499,7 @@
                     </button>
                     <button
                       type="button"
-                      on:click={() => toggleBodyweightProgression(exercise.exerciseId, false)}
+                      onclick={() => toggleBodyweightProgression(exercise.exerciseId, false)}
                       disabled={saving}
                       class="flex-1 px-2 py-1 text-xs rounded-md transition-all {!useBodyweight ? 'bg-primary text-white' : 'text-text-muted'}"
                     >
@@ -589,11 +590,11 @@
                             max="5"
                             step="1"
                             value={userExercises[exercise.exerciseId]?.incrementReps || exerciseData?.defaultIncrementReps || 1}
-                            on:blur={(e) => {
+                            onblur={(e) => {
                               updateIncrementReps(exercise.exerciseId, parseInt(e.currentTarget.value) || 1);
                               editingIncrementReps = null;
                             }}
-                            on:keydown={(e) => {
+                            onkeydown={(e) => {
                               if (e.key === 'Enter') {
                                 updateIncrementReps(exercise.exerciseId, parseInt(e.currentTarget.value) || 1);
                                 editingIncrementReps = null;
@@ -605,7 +606,7 @@
                         {:else}
                           <button
                             type="button"
-                            on:click={() => editingIncrementReps = { workoutIndex: activeTab, exerciseIndex }}
+                            onclick={() => editingIncrementReps = { workoutIndex: activeTab, exerciseIndex }}
                             class="w-full bg-surface rounded px-2 py-1 text-center text-sm"
                           >
                             +{userExercises[exercise.exerciseId]?.incrementReps || exerciseData?.defaultIncrementReps || 1}
@@ -645,7 +646,7 @@
                         max="100"
                         step="5"
                         value={Math.round(((exercise.progression?.deloadPercent) || 0.1) * 100)}
-                        on:input={(e) => {
+                        oninput={(e) => {
                           if (exercise.progression) {
                             exercise.progression.deloadPercent = parseInt(e.currentTarget.value) / 100;
                           }
@@ -663,7 +664,7 @@
           <!-- Add Exercise Button -->
           <button
             type="button"
-            on:click={() => openExerciseSelector(activeTab)}
+            onclick={() => openExerciseSelector(activeTab)}
             disabled={saving}
             class="w-full py-5 bg-primary hover:bg-primary-dark active:scale-95 transition-all rounded-xl text-white font-semibold text-lg flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed min-h-[60px] mb-32"
           >
@@ -680,7 +681,7 @@
   <!-- Save Button Fixed Bottom -->
   <footer class="fixed bottom-0 left-0 right-0 bg-surface border-t border-surface-light p-4" style="z-index: 90;">
     <button
-      on:click={saveProgram}
+      onclick={saveProgram}
       disabled={saving}
       class="w-full bg-primary hover:bg-primary-dark active:scale-95 transition-all rounded-xl py-3 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
     >
@@ -691,12 +692,12 @@
 
 <!-- Exercise Selector Modal -->
 {#if showExerciseSelector}
-  <div class="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4" style="z-index: 100;" role="button" tabindex="0" on:click={() => showExerciseSelector = false} on:keydown={(e) => e.key === 'Enter' && (showExerciseSelector = false)}>
-    <div class="bg-surface w-full max-w-lg max-h-[80vh] rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col" role="presentation" on:click|stopPropagation>
+  <div class="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4" style="z-index: 100;" role="button" tabindex="0" onclick={() => showExerciseSelector = false} onkeydown={(e) => e.key === 'Enter' && (showExerciseSelector = false)}>
+    <div class="bg-surface w-full max-w-lg max-h-[80vh] rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col" role="presentation" onclick={stopPropagation}>
       <!-- Modal Header -->
       <div class="p-4 border-b border-surface-light flex items-center justify-between">
         <h3 class="font-semibold">Select Exercise</h3>
-        <button on:click={() => showExerciseSelector = false} class="p-2 hover:bg-surface-light rounded-lg" aria-label="Close exercise selector">
+        <button onclick={() => showExerciseSelector = false} class="p-2 hover:bg-surface-light rounded-lg" aria-label="Close exercise selector">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
           </svg>
@@ -711,7 +712,7 @@
             <div class="space-y-1">
               {#each exercises as exercise}
                 <button
-                  on:click={() => addExerciseToWorkout(exercise)}
+                  onclick={() => addExerciseToWorkout(exercise)}
                   class="w-full text-left p-3 rounded-lg hover:bg-surface-light transition-colors flex items-center justify-between"
                 >
                   <div>
@@ -734,20 +735,20 @@
 
 <!-- Remove Workout Confirmation Modal -->
 {#if showRemoveWorkoutModal}
-  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" role="button" tabindex="0" on:click={cancelRemoveWorkout} on:keydown={(e) => e.key === 'Enter' && cancelRemoveWorkout()}>
-    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" role="presentation" on:click|stopPropagation>
+  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" role="button" tabindex="0" onclick={cancelRemoveWorkout} onkeydown={(e) => e.key === 'Enter' && cancelRemoveWorkout()}>
+    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" role="presentation" onclick={stopPropagation}>
       <h3 class="text-xl font-bold mb-2">Remove Workout?</h3>
       <p class="text-text-muted mb-6">This workout and all its exercises will be removed. This action cannot be undone.</p>
       
       <div class="flex gap-3">
         <button
-          on:click={cancelRemoveWorkout}
+          onclick={cancelRemoveWorkout}
           class="flex-1 px-4 py-3 bg-surface-light hover:bg-surface-light/80 rounded-xl font-medium"
         >
           Cancel
         </button>
         <button
-          on:click={executeRemoveWorkout}
+          onclick={executeRemoveWorkout}
           class="flex-1 px-4 py-3 bg-danger hover:bg-danger/80 text-white rounded-xl font-medium"
         >
           Remove
@@ -759,13 +760,13 @@
 
 <!-- Validation Modal -->
 {#if showValidationModal}
-  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" role="button" tabindex="0" on:click={closeValidation} on:keydown={(e) => e.key === 'Enter' && closeValidation()}>
-    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" role="presentation" on:click|stopPropagation>
+  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" role="button" tabindex="0" onclick={closeValidation} onkeydown={(e) => e.key === 'Enter' && closeValidation()}>
+    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" role="presentation" onclick={stopPropagation}>
       <h3 class="text-xl font-bold mb-2">Validation Error</h3>
       <p class="text-text-muted mb-6">{validationMessage}</p>
       
       <button
-        on:click={closeValidation}
+        onclick={closeValidation}
         class="w-full px-4 py-3 bg-primary hover:bg-primary-dark rounded-xl font-medium"
       >
         OK
@@ -776,13 +777,13 @@
 
 <!-- Error Modal -->
 {#if showErrorModal}
-  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" role="button" tabindex="0" on:click={closeError} on:keydown={(e) => e.key === 'Enter' && closeError()}>
-    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" role="presentation" on:click|stopPropagation>
+  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" role="button" tabindex="0" onclick={closeError} onkeydown={(e) => e.key === 'Enter' && closeError()}>
+    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" role="presentation" onclick={stopPropagation}>
       <h3 class="text-xl font-bold mb-2">Error</h3>
       <p class="text-text-muted mb-6">{errorMessage}</p>
       
       <button
-        on:click={closeError}
+        onclick={closeError}
         class="w-full px-4 py-3 bg-primary hover:bg-primary-dark rounded-xl font-medium"
       >
         OK

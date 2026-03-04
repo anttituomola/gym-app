@@ -42,6 +42,7 @@ export const start = mutation({
         sets: v.number(),
         reps: v.number(),
         weight: v.number(),
+        timeSeconds: v.optional(v.number()),
       })
     ),
   },
@@ -216,6 +217,7 @@ export const saveCompleted = mutation({
         sets: v.number(),
         reps: v.number(),
         weight: v.number(),
+        timeSeconds: v.optional(v.number()),
       })
     ),
     sets: v.array(
@@ -263,6 +265,7 @@ export const modify = mutation({
         sets: v.number(),
         reps: v.number(),
         weight: v.number(),
+        timeSeconds: v.optional(v.number()),
       })
     ),
   },
