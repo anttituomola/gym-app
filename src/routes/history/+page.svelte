@@ -48,8 +48,10 @@
   }
   
   function openWorkoutModal(workout: any) {
+    console.log('Opening workout modal:', workout);
     selectedWorkout = workout;
     showWorkoutModal = true;
+    console.log('Modal state:', showWorkoutModal, selectedWorkout);
   }
   
   function closeWorkoutModal() {
@@ -103,7 +105,8 @@
             return sum;
           }, 0) || 0}
           <button 
-            class="bg-surface rounded-xl p-4 w-full text-left hover:bg-surface-light transition-colors"
+            type="button"
+            class="bg-surface rounded-xl p-4 w-full text-left hover:bg-surface-light transition-colors block"
             onclick={() => openWorkoutModal(workout)}
           >
             <div class="flex justify-between items-start mb-2">
@@ -128,8 +131,17 @@
   
   <!-- Workout Detail Modal -->
   {#if showWorkoutModal && selectedWorkout}
-    <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onclick={closeWorkoutModal}>
-      <div class="bg-surface rounded-2xl p-6 max-w-md w-full max-h-[80vh] overflow-y-auto" onclick={(e) => e.stopPropagation()}>
+    <div 
+      class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" 
+      onclick={closeWorkoutModal}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div 
+        class="bg-surface rounded-2xl p-6 max-w-md w-full max-h-[80vh] overflow-y-auto" 
+        onclick={(e) => e.stopPropagation()}
+        role="document"
+      >
         <!-- Header -->
         <div class="flex items-center justify-between mb-4">
           <div>
@@ -149,7 +161,12 @@
         
         <!-- Exercises -->
         <div class="space-y-4">
-          {#each selectedWorkout.plan as exercise}
+          {#if !selectedWorkout.plan || selectedWorkout.plan.length === 0}
+            <div class="text-center text-text-muted py-4">
+              No exercise data available
+            </div>
+          {/if}
+          {#each selectedWorkout.plan || [] as exercise}
             {@const exerciseSets = selectedWorkout.sets?.filter((s: any) => s.exerciseId === exercise.exerciseId) || []}
             {@const completedSets = exerciseSets.filter((s: any) => s.completedReps !== undefined || s.completedTimeSeconds !== undefined)}
             {@const exerciseVolume = completedSets.reduce((sum: number, s: any) => {
