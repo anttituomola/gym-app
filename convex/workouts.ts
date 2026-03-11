@@ -249,6 +249,7 @@ export const saveCompleted = mutation({
     completedAt: v.number(),
   },
   handler: async (ctx, args) => {
+    // First, save the workout
     const workoutId = await ctx.db.insert("workouts", {
       userId: args.userId,
       startedAt: args.completedAt - 3600000, // Estimate start time (1 hour before completion)
@@ -258,6 +259,63 @@ export const saveCompleted = mutation({
       sets: args.sets,
       currentSetIndex: args.sets.length,
     });
+
+    // Then, update exercise progression in user profile
+    const profile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .first();
+
+    if (profile) {
+      const updatedExercises = { ...profile.exercises };
+
+      // Process each exercise in the workout
+      for (const planItem of args.plan) {
+        const exerciseSets = args.sets.filter(
+          s => s.exerciseId === planItem.exerciseId && s.type === "work"
+        );
+        
+        // Skip if no work sets were completed for this exercise
+        if (exerciseSets.length === 0) continue;
+        
+        const allCompleted = exerciseSets.every(
+          s => s.completedReps && s.completedReps >= s.targetReps
+        );
+        
+        const anyFailed = exerciseSets.some(s => s.failed);
+
+        const settings = updatedExercises[planItem.exerciseId];
+        if (settings) {
+          if (allCompleted) {
+            settings.successCount++;
+            settings.failureCount = 0;
+
+            // Check for progression
+            if (settings.successCount >= 1) { // Progress after each success
+              settings.currentWeight += settings.incrementKg;
+              // Round to achievable weight with available plates
+              settings.currentWeight = roundToAchievableWeight(settings.currentWeight);
+              settings.successCount = 0;
+            }
+          } else if (anyFailed) {
+            settings.failureCount++;
+            settings.successCount = 0;
+
+            // Check for deload
+            if (settings.failureCount >= settings.deloadAfterFailures) {
+              settings.currentWeight *= (1 - settings.deloadPercent);
+              // Round to achievable weight with available plates
+              settings.currentWeight = roundToAchievableWeight(settings.currentWeight);
+              settings.failureCount = 0;
+            }
+          }
+
+          updatedExercises[planItem.exerciseId] = settings;
+        }
+      }
+
+      await ctx.db.patch(profile._id, { exercises: updatedExercises });
+    }
 
     return await ctx.db.get(workoutId);
   },
