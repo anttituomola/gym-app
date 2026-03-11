@@ -112,6 +112,16 @@
           </a>
           
           <a 
+            href="/programs" 
+            class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors {currentPath.startsWith('/programs') ? 'bg-primary text-white' : 'text-text-muted hover:bg-surface-light'}"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+            </svg>
+            <span class="font-medium">Programs</span>
+          </a>
+          
+          <a 
             href="/history" 
             class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors {currentPath === '/history' ? 'bg-primary text-white' : 'text-text-muted hover:bg-surface-light'}"
           >
@@ -160,6 +170,16 @@
           </a>
           
           <a 
+            href="/programs" 
+            class="flex flex-col items-center p-2 {currentPath.startsWith('/programs') ? 'text-primary' : 'text-text-muted'}"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+            </svg>
+            <span class="text-xs mt-1">Programs</span>
+          </a>
+          
+          <a 
             href="/history" 
             class="flex flex-col items-center p-2 {currentPath === '/history' ? 'text-primary' : 'text-text-muted'}"
           >
@@ -179,16 +199,6 @@
             </svg>
             <span class="text-xs mt-1">Settings</span>
           </a>
-          
-          <button 
-            onclick={handleLogout}
-            class="flex flex-col items-center p-2 text-text-muted hover:text-danger"
-          >
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            <span class="text-xs mt-1">Logout</span>
-          </button>
         </div>
       </nav>
     {/if}
