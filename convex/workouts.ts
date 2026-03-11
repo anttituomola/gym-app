@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { generateAllSets, type WorkoutSet } from "./warmup";
+import { roundToAchievableWeight } from "./plates";
 
 // Get active workout for user
 export const getActive = query({
@@ -167,6 +168,8 @@ export const complete = mutation({
             // Check for progression
             if (settings.successCount >= 1) { // Progress after each success for simplicity
               settings.currentWeight += settings.incrementKg;
+              // Round to achievable weight with available plates
+              settings.currentWeight = roundToAchievableWeight(settings.currentWeight);
               settings.successCount = 0;
             }
           } else if (anyFailed) {
@@ -176,7 +179,8 @@ export const complete = mutation({
             // Check for deload
             if (settings.failureCount >= settings.deloadAfterFailures) {
               settings.currentWeight *= (1 - settings.deloadPercent);
-              settings.currentWeight = Math.round(settings.currentWeight / 1.25) * 1.25; // Round to nearest 1.25kg
+              // Round to achievable weight with available plates
+              settings.currentWeight = roundToAchievableWeight(settings.currentWeight);
               settings.failureCount = 0;
             }
           }

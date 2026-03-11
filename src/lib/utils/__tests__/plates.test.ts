@@ -195,6 +195,34 @@ describe('Plate Calculator', () => {
       
       // 63kg - not achievable (21.5 per side)
       expect(isAchievableWeight(63)).toBe(false);
+      
+      // 86kg - not achievable (33 per side, can't make 33 with available plates)
+      expect(isAchievableWeight(86)).toBe(false);
+    });
+  });
+
+  describe('Problematic weights', () => {
+    it('should round 86kg to achievable weight (33kg per side is not possible)', () => {
+      // 86kg = 33kg per side, but 33 is not achievable with plates [20, 15, 10, 5, 2.5, 1.25]
+      // 33 = 20 + 10 + 2.5 + 0.5 (no 0.5 plate)
+      // 33 rounds to nearest 1.25 = 32.5 (26 * 1.25), which IS achievable: 20 + 10 + 2.5
+      // So 86kg should round to 85kg (20 bar + 32.5 per side * 2)
+      const rounded = roundToAchievableWeight(86);
+      expect(isAchievableWeight(rounded)).toBe(true);
+      // 86 should round to 85 (32.5 per side is closer than 33.75)
+      expect(rounded).toBe(85);
+    });
+
+    it('should ensure all generated weights are achievable', () => {
+      // Test various weights that might come from percentage calculations
+      const problematicWeights = [61, 63, 66, 68, 71, 73, 76, 78, 81, 83, 86, 88, 91];
+      
+      for (const weight of problematicWeights) {
+        const rounded = roundToAchievableWeight(weight);
+        expect(isAchievableWeight(rounded)).toBe(true);
+        // Rounded weight should be close to original
+        expect(Math.abs(rounded - weight)).toBeLessThanOrEqual(2.5);
+      }
     });
   });
 

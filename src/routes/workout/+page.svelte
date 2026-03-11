@@ -90,6 +90,7 @@
   let showEditWeightModal = false;
   let editWeightValue = 0;
   let editWeightError = '';
+  let saveWeightToProfile = false;
   
   // Derived values for exercise view
   $: exerciseSets = activeExerciseId 
@@ -404,8 +405,8 @@
     viewMode = 'overview';
     activeExerciseId = null;
     navVisibilityStore.set({ hideMainNav: false });
-    // Note: restTimer is global and should keep running when navigating away
-    // Do NOT call restTimer.skip() here - timer only stops when explicitly skipped or workout ends
+    // Stop the rest timer when going back to overview
+    restTimer.skip();
     if (exerciseTimerInterval) clearInterval(exerciseTimerInterval);
     if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
     if (longPressTimer) clearTimeout(longPressTimer);
@@ -727,9 +728,10 @@
   function closeEditWeightModal() {
     showEditWeightModal = false;
     editWeightError = '';
+    saveWeightToProfile = false;
   }
   
-  function saveEditedWeight() {
+  async function saveEditedWeight() {
     if (!currentSet || !currentExercise) return;
     
     // Validate weight
@@ -744,9 +746,10 @@
       return;
     }
     
-    // Round to nearest 0.5kg for barbell exercises, 1kg for others
+    // Round to achievable weight for barbell exercises (must be possible with available plates)
+    // For non-barbell, just round to nearest kg
     const isBarbell = currentExercise.equipment.includes('barbell');
-    const roundedWeight = isBarbell ? Math.round(newWeight * 2) / 2 : Math.round(newWeight);
+    const roundedWeight = isBarbell ? roundToAchievableWeight(newWeight) : Math.round(newWeight);
     
     // Update all incomplete sets for this exercise with the new weight
     sets = sets.map(s => {
@@ -766,9 +769,31 @@
       return p;
     });
     
+    // Save to user profile if checkbox is checked
+    if (saveWeightToProfile && $authStore.userId) {
+      try {
+        await convex.mutation(api.userProfiles.updateExercise, {
+          userId: $authStore.userId as any,
+          exerciseId: currentExercise.id,
+          settings: { currentWeight: roundedWeight },
+        });
+        // Also update local defaultWeights
+        defaultWeights[currentExercise.id] = {
+          ...(defaultWeights[currentExercise.id] || {}),
+          currentWeight: roundedWeight,
+        };
+      } catch (err) {
+        console.error('Failed to save weight to profile:', err);
+        // Continue anyway - the workout-level change is still applied
+      }
+    }
+    
     // Mark workout as modified
     workoutModified = true;
     modificationSummary = `Adjusted ${currentExercise.name} weight to ${roundedWeight}kg`;
+    
+    // Reset the checkbox for next time
+    saveWeightToProfile = false;
     
     closeEditWeightModal();
   }
@@ -1641,6 +1666,18 @@
           </div>
         {/if}
       </div>
+      
+      <!-- Save to profile checkbox -->
+      {#if $authStore.userId}
+        <label class="flex items-center gap-3 mb-4 cursor-pointer">
+          <input
+            type="checkbox"
+            bind:checked={saveWeightToProfile}
+            class="w-5 h-5 rounded border-surface-light bg-surface-light text-primary focus:ring-primary"
+          />
+          <span class="text-sm">Save to my profile for future workouts</span>
+        </label>
+      {/if}
       
       <div class="flex gap-3">
         <button

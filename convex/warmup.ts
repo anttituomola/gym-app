@@ -1,8 +1,6 @@
-// Warmup calculation for Convex (duplicated to avoid $lib alias issues)
+// Warmup calculation for Convex (uses proper plate rounding)
 import { getExerciseById } from "./exercises";
-
-const BAR_WEIGHT = 20; // kg
-const MIN_PLATE = 2.5; // kg
+import { BAR_WEIGHT, roundToAchievableWeight } from "./plates";
 
 export interface WorkoutSet {
   id: string;
@@ -32,11 +30,13 @@ export function calculateWarmupSets(exerciseId: string, workWeight: number): Wor
     if (step.percentOfWork === 0) {
       weight = BAR_WEIGHT;
     } else {
+      // Calculate percentage and round to achievable weight with available plates
       const rawWeight = workWeight * step.percentOfWork;
-      weight = Math.round(rawWeight / (MIN_PLATE * 2)) * (MIN_PLATE * 2);
+      weight = roundToAchievableWeight(rawWeight);
     }
 
-    if (weight < workWeight - MIN_PLATE && !sets.find((s: WorkoutSet) => s.targetWeight === weight)) {
+    // Only add if weight is less than work weight and not duplicate
+    if (weight < workWeight && !sets.find((s: WorkoutSet) => s.targetWeight === weight)) {
       sets.push({
         id: `warmup-${setNumber}`,
         exerciseId,
@@ -76,12 +76,15 @@ export function generateAllSets(
   reps: number,
   weight: number
 ): WorkoutSet[] {
-  const warmupSets = calculateWarmupSets(exerciseId, weight);
+  // Round work weight to achievable value
+  const roundedWeight = roundToAchievableWeight(weight);
+  
+  const warmupSets = calculateWarmupSets(exerciseId, roundedWeight);
   const workSetsList = calculateWorkSets(
     exerciseId, 
     workSets, 
     reps, 
-    weight, 
+    roundedWeight, 
     warmupSets.length + 1
   );
   

@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { EXERCISES } from "./exercises";
+import { roundToAchievableWeight } from "./plates";
 
 // ============================================================================
 // Type Definitions (mirrored from plan)
@@ -207,8 +208,8 @@ function calculateStartingWeights(
     // Calculate base weight
     let weight = bodyWeightKg * multiplier * goalAdjustment;
     
-    // Round to nearest 2.5 kg (standard plate increment)
-    weight = Math.round(weight / 2.5) * 2.5;
+    // Round to achievable weight with available plates (ensures weight can actually be loaded)
+    weight = roundToAchievableWeight(weight);
     
     // Safety caps
     const minWeight = exerciseId === "deadlift" ? 60 : 20; // Bar weight

@@ -139,13 +139,20 @@ export function generateAllSets(
   weight: number,
   timeSeconds?: number
 ): WorkoutSet[] {
+  const exercise = getExerciseById(exerciseId);
+  const isBarbell = exercise?.equipment.includes('barbell') ?? false;
+  
+  // Round weight to achievable value for barbell exercises
+  // This ensures the weight can be made with available plates
+  const roundedWeight = isBarbell ? roundToAchievableWeight(weight) : weight;
+  
   // Time-based exercises don't have warmup sets
-  const warmupSets = timeSeconds ? [] : calculateWarmupSets(exerciseId, weight);
+  const warmupSets = timeSeconds ? [] : calculateWarmupSets(exerciseId, roundedWeight);
   const workSetsList = calculateWorkSets(
     exerciseId, 
     workSets, 
     reps, 
-    weight, 
+    roundedWeight, 
     warmupSets.length + 1,
     timeSeconds
   );
