@@ -1,6 +1,6 @@
 import type { WorkoutSet } from '$lib/types';
 import { getExerciseById } from '$lib/data/exercises';
-import { BAR_WEIGHT, roundToAchievableWeight } from './plates';
+import { BAR_WEIGHT, roundToAchievableWeight, findOptimalWarmupWeight, canBuildByAddingOnly, getPlateBreakdown } from './plates';
 
 // Minimum number of warmup sets for weighted exercises
 const MIN_WARMUP_SETS = 3;
@@ -26,83 +26,122 @@ export function calculateWarmupSets(exerciseId: string, workWeight: number): Wor
     }];
   }
 
+  const isBarbell = exercise.equipment.includes('barbell');
   const sets: WorkoutSet[] = [];
-  let setNumber = 1;
-
-  // Generate warmup sets from formula
-  for (const step of exercise.warmupFormula) {
-    let weight: number;
-    
-    if (step.percentOfWork === 0) {
-      // Empty bar
-      weight = BAR_WEIGHT;
-    } else {
-      // Calculate percentage and round to achievable weight with available plates
-      const rawWeight = workWeight * step.percentOfWork;
-      weight = roundToAchievableWeight(rawWeight);
-    }
-
-    // Only add if weight is less than work weight and not duplicate
-    if (weight < workWeight && !sets.find(s => s.targetWeight === weight)) {
-      sets.push({
-        id: `${exerciseId}-warmup-${setNumber}`,
-        exerciseId,
-        setNumber: setNumber++,
-        type: 'warmup',
-        targetReps: step.reps,
-        targetWeight: weight,
-        failed: false
-      });
-    }
+  
+  // Always start with empty bar for barbell exercises
+  if (isBarbell) {
+    sets.push({
+      id: `${exerciseId}-warmup-1`,
+      exerciseId,
+      setNumber: 1,
+      type: 'warmup',
+      targetReps: 10,
+      targetWeight: BAR_WEIGHT,
+      failed: false
+    });
   }
 
-  // Ensure at least MIN_WARMUP_SETS by adding intermediate steps if needed
-  if (sets.length < MIN_WARMUP_SETS) {
-    const isBarbell = exercise.equipment.includes('barbell');
+  // For barbell exercises, use optimized plate-loading algorithm
+  if (isBarbell) {
+    // Target percentages for warmup sets (before work weight)
+    const targetPercentages = [0.40, 0.60, 0.80]; // 40%, 60%, 80% of work weight
+    const repsForStep = [5, 3, 1]; // Reps taper as weight increases
     
-    // Always start with empty bar for barbell exercises if not already there
-    if (isBarbell && !sets.find(s => s.targetWeight === BAR_WEIGHT)) {
-      sets.unshift({
-        id: `${exerciseId}-warmup-1`,
-        exerciseId,
-        setNumber: 1,
-        type: 'warmup',
-        targetReps: 10,
-        targetWeight: BAR_WEIGHT,
-        failed: false
-      });
-      // Renumber sets
-      sets.forEach((s, i) => { s.setNumber = i + 1; });
-    }
+    let currentWeight = BAR_WEIGHT;
+    let stepIndex = 0;
     
-    // Add intermediate sets if still not enough
-    while (sets.length < MIN_WARMUP_SETS) {
-      const lastSet = sets[sets.length - 1];
-      const remainingGap = workWeight - lastSet.targetWeight;
+    // Keep adding warmup sets until we're close to work weight
+    while (currentWeight < workWeight - 10 && stepIndex < targetPercentages.length) {
+      const targetPercent = targetPercentages[stepIndex];
+      const targetWeight = workWeight * targetPercent;
       
-      // Add a set at roughly halfway between last warmup and work weight
-      let nextWeight: number;
-      if (isBarbell) {
-        // For barbell, make meaningful jumps (at least 10kg, but not too close to work weight)
-        const jump = Math.max(10, Math.floor(remainingGap / 3));
-        nextWeight = roundToAchievableWeight(lastSet.targetWeight + jump);
-      } else {
-        // For other equipment, use percentage-based jumps
-        nextWeight = Math.round(lastSet.targetWeight + remainingGap * 0.5);
+      // Find optimal weight that builds on current weight
+      // Allow slight overshoot (up to 5kg) if it means simpler plate loading
+      const optimalWeight = findOptimalWarmupWeight(currentWeight, targetWeight, 5);
+      
+      // Only add if it's a meaningful increase (at least 5kg)
+      if (optimalWeight > currentWeight + 4) {
+        sets.push({
+          id: `${exerciseId}-warmup-${sets.length + 1}`,
+          exerciseId,
+          setNumber: sets.length + 1,
+          type: 'warmup',
+          targetReps: repsForStep[stepIndex] || 1,
+          targetWeight: optimalWeight,
+          failed: false
+        });
+        currentWeight = optimalWeight;
       }
       
-      // Don't add if too close to work weight
-      if (nextWeight >= workWeight - 2.5 || nextWeight <= lastSet.targetWeight + 2.5) {
+      stepIndex++;
+    }
+    
+    // Ensure we have at least MIN_WARMUP_SETS
+    while (sets.length < MIN_WARMUP_SETS && currentWeight < workWeight - 10) {
+      // Find a weight that's roughly halfway between current and work weight
+      const gap = workWeight - currentWeight;
+      const targetWeight = currentWeight + (gap * 0.5);
+      
+      const optimalWeight = findOptimalWarmupWeight(currentWeight, targetWeight, 2.5);
+      
+      if (optimalWeight > currentWeight + 4 && optimalWeight < workWeight - 2.5) {
+        sets.push({
+          id: `${exerciseId}-warmup-${sets.length + 1}`,
+          exerciseId,
+          setNumber: sets.length + 1,
+          type: 'warmup',
+          targetReps: Math.max(1, 5 - sets.length), // Taper reps
+          targetWeight: optimalWeight,
+          failed: false
+        });
+        currentWeight = optimalWeight;
+      } else {
+        break;
+      }
+    }
+  } else {
+    // For non-barbell equipment (dumbbells, machines), use percentage-based approach
+    // but still ensure progressive loading
+    for (const step of exercise.warmupFormula) {
+      let weight: number;
+      
+      if (step.percentOfWork === 0) {
+        weight = Math.min(workWeight * 0.3, 20); // Light weight or bodyweight
+      } else {
+        const rawWeight = workWeight * step.percentOfWork;
+        weight = Math.round(rawWeight);
+      }
+
+      // Only add if weight is less than work weight and not duplicate
+      if (weight < workWeight && !sets.find(s => s.targetWeight === weight)) {
+        sets.push({
+          id: `${exerciseId}-warmup-${sets.length + 1}`,
+          exerciseId,
+          setNumber: sets.length + 1,
+          type: 'warmup',
+          targetReps: step.reps,
+          targetWeight: weight,
+          failed: false
+        });
+      }
+    }
+    
+    // Ensure minimum warmup sets for non-barbell too
+    while (sets.length < MIN_WARMUP_SETS) {
+      const lastSet = sets[sets.length - 1];
+      const nextWeight = Math.round(lastSet.targetWeight + (workWeight - lastSet.targetWeight) * 0.4);
+      
+      if (nextWeight >= workWeight - 2 || nextWeight <= lastSet.targetWeight) {
         break;
       }
       
-      // Insert at the end, before work sets
       sets.push({
         id: `${exerciseId}-warmup-${sets.length + 1}`,
         exerciseId,
         setNumber: sets.length + 1,
         type: 'warmup',
-        targetReps: lastSet.targetReps > 3 ? 3 : lastSet.targetReps, // taper reps
+        targetReps: Math.max(3, lastSet.targetReps - 2),
         targetWeight: nextWeight,
         failed: false
       });

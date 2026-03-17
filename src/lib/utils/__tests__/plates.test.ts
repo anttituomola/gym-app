@@ -7,7 +7,12 @@ import {
   roundToAchievablePlates,
   getPlateBreakdown,
   getPlateWeightPerSide,
-  isAchievableWeight
+  isAchievableWeight,
+  countPlates,
+  canBuildByAddingOnly,
+  findOptimalWarmupWeight,
+  getPlateDifference,
+  formatPlateChanges
 } from '../plates';
 
 describe('Plate Calculator', () => {
@@ -246,6 +251,168 @@ describe('Plate Calculator', () => {
     it.each(commonWeights)('should achieve %i kg', (weight) => {
       expect(isAchievableWeight(weight)).toBe(true);
       expect(roundToAchievableWeight(weight)).toBe(weight);
+    });
+  });
+
+  describe('Warmup Optimization', () => {
+    describe('countPlates', () => {
+      it('should count plates correctly', () => {
+        expect(countPlates(0)).toBe(0);
+        expect(countPlates(20)).toBe(1);   // One 20kg plate
+        expect(countPlates(30)).toBe(2);   // 20 + 10
+        expect(countPlates(40)).toBe(2);   // 20 + 20
+        expect(countPlates(42.5)).toBe(3); // 20 + 20 + 2.5
+      });
+    });
+
+    describe('canBuildByAddingOnly', () => {
+      it('should return true when target can be built by adding plates', () => {
+        // 60kg (20 per side) -> 80kg (30 per side): add 10kg plate
+        expect(canBuildByAddingOnly(60, 80)).toBe(true);
+        
+        // 60kg -> 100kg (40 per side): add two 20kg plates or 20+10+10
+        expect(canBuildByAddingOnly(60, 100)).toBe(true);
+        
+        // 80kg -> 120kg (50 per side = 20+20+10): add 20+10
+        expect(canBuildByAddingOnly(80, 120)).toBe(true);
+      });
+
+      it('should return false when plates need to be removed or swapped', () => {
+        // 80kg (20+10 per side) -> 60kg (20 per side): would need to remove 10
+        expect(canBuildByAddingOnly(80, 60)).toBe(false);
+        
+        // Cannot build same weight
+        expect(canBuildByAddingOnly(60, 60)).toBe(false);
+        
+        // 80kg (20+10 per side) -> 100kg (20+20 per side): would need to swap 10 for 20
+        expect(canBuildByAddingOnly(80, 100)).toBe(false);
+      });
+
+      it('should handle empty bar transitions', () => {
+        // Bar (0 per side) -> 60kg (20 per side): add 20
+        expect(canBuildByAddingOnly(20, 60)).toBe(true);
+      });
+    });
+
+    describe('findOptimalWarmupWeight', () => {
+      it('should return current weight if target is lower', () => {
+        expect(findOptimalWarmupWeight(80, 60)).toBe(80);
+      });
+
+      it('should find weight that builds by adding plates', () => {
+        // From 60kg, targeting ~72kg (80% of 90kg work weight)
+        // Should find something achievable by only adding plates
+        const result = findOptimalWarmupWeight(60, 72);
+        expect(result).toBeGreaterThan(60);
+        expect(canBuildByAddingOnly(60, result)).toBe(true);
+      });
+
+      it('should prefer weights closer to target', () => {
+        // From bar (20kg), targeting 50kg
+        const result = findOptimalWarmupWeight(20, 50);
+        // Should be reasonably close to 50
+        expect(result).toBeGreaterThanOrEqual(45);
+        expect(result).toBeLessThanOrEqual(55);
+      });
+
+      it('should prefer fewer plates when possible', () => {
+        // From 60kg, targeting ~72kg
+        // 75kg (27.5 per side = 20+5+2.5) uses 3 plates
+        // 80kg (30 per side = 20+10) uses 2 plates - should prefer this
+        const result = findOptimalWarmupWeight(60, 72);
+        const perSide = (result - 20) / 2;
+        const plates = countPlates(perSide);
+        // Should use reasonably few plates
+        expect(plates).toBeLessThanOrEqual(3);
+      });
+    });
+
+    describe('getPlateDifference', () => {
+      it('should show plates to add', () => {
+        // 60kg (20 per side) -> 80kg (30 per side = 20+10)
+        const diff = getPlateDifference(60, 80);
+        expect(diff.remove).toEqual([]);
+        expect(diff.add).toEqual([10]);
+      });
+
+      it('should show plates to remove', () => {
+        // 80kg -> 60kg
+        const diff = getPlateDifference(80, 60);
+        expect(diff.remove).toEqual([10]);
+        expect(diff.add).toEqual([]);
+      });
+
+      it('should show both add and remove when needed', () => {
+        // 70kg (25 per side = 20+5) -> 80kg (30 per side = 20+10)
+        // Need to remove 5, add 10
+        const diff = getPlateDifference(70, 80);
+        expect(diff.remove).toContain(5);
+        expect(diff.add).toContain(10);
+      });
+    });
+
+    describe('formatPlateChanges', () => {
+      it('should format add operations', () => {
+        expect(formatPlateChanges(60, 80)).toBe('Add: +10');
+      });
+
+      it('should format remove operations', () => {
+        expect(formatPlateChanges(80, 60)).toBe('Remove: -10');
+      });
+
+      it('should format combined operations', () => {
+        const result = formatPlateChanges(70, 80);
+        expect(result).toContain('Add:');
+        expect(result).toContain('Remove:');
+      });
+
+      it('should show no change for same weight', () => {
+        expect(formatPlateChanges(60, 60)).toBe('No change');
+      });
+    });
+
+    describe('Real-world warmup scenarios', () => {
+      it('should optimize warmup for 100kg squat', () => {
+        // Work weight: 100kg (40kg per side = 20+20)
+        // Ideal warmups: 40%, 60%, 80% = 40kg, 60kg, 80kg
+        
+        const warmups: number[] = [];
+        let current = 20; // Bar
+        
+        // First warmup ~40kg
+        const w1 = findOptimalWarmupWeight(current, 40);
+        warmups.push(w1);
+        current = w1;
+        
+        // Second warmup ~60kg
+        const w2 = findOptimalWarmupWeight(current, 60);
+        warmups.push(w2);
+        current = w2;
+        
+        // Third warmup ~80kg
+        const w3 = findOptimalWarmupWeight(current, 80);
+        warmups.push(w3);
+        
+        // Verify all warmups build progressively
+        expect(warmups[0]).toBeGreaterThan(20);
+        expect(warmups[1]).toBeGreaterThan(warmups[0]);
+        expect(warmups[2]).toBeGreaterThan(warmups[1]);
+        
+        // Verify each can be built by adding plates
+        expect(canBuildByAddingOnly(20, warmups[0])).toBe(true);
+        expect(canBuildByAddingOnly(warmups[0], warmups[1])).toBe(true);
+        expect(canBuildByAddingOnly(warmups[1], warmups[2])).toBe(true);
+      });
+
+      it('should prefer adding over removing plates', () => {
+        // Example: From 30kg per side (20+10), targeting 35kg (ideally 20+15)
+        // But 35kg = 20+15 requires removing 10 and adding 15
+        // Better: go to 40kg (20+20) - just add another 20
+        const result = findOptimalWarmupWeight(60, 70);
+        
+        // Should be able to build by only adding
+        expect(canBuildByAddingOnly(60, result)).toBe(true);
+      });
     });
   });
 });

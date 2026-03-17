@@ -95,8 +95,8 @@
       // For default A/B workouts
       const lastWorkout = recentWorkouts[0];
       if (lastWorkout) {
-        // Check if last workout was A or B
-        const lastType = lastWorkout.type || 'A';
+        // Check if last workout was A or B (workoutType field stores 'A', 'B', or program name)
+        const lastType = lastWorkout.workoutType || 'A';
         const nextType = lastType === 'A' ? 'B' : 'A';
         nextWorkout = {
           type: nextType,
@@ -548,7 +548,7 @@
             >
               <div class="flex justify-between items-center">
                 <div>
-                  <span class="font-medium">Workout {workout.type || 'A'}</span>
+                  <span class="font-medium">Workout {workout.workoutType || 'A'}</span>
                   <span class="text-xs text-text-muted ml-2">
                     {completedSets}/{totalSets} sets
                   </span>
@@ -575,7 +575,7 @@
       <!-- Header -->
       <header class="p-4 border-b border-surface-light flex items-center justify-between">
         <div>
-          <h3 class="text-xl font-bold">Workout {selectedWorkout.type || 'A'}</h3>
+          <h3 class="text-xl font-bold">Workout {selectedWorkout.workoutType || 'A'}</h3>
           <p class="text-sm text-text-muted">
             {formatDateWithWeekday(selectedWorkout.completedAt || selectedWorkout.startedAt)}
           </p>

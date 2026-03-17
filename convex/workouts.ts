@@ -39,6 +39,62 @@ export const getHistory = query({
   },
 });
 
+// Get exercise history - all completed sets for a specific exercise
+export const getExerciseHistory = query({
+  args: { 
+    userId: v.id("users"),
+    exerciseId: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const workouts = await ctx.db
+      .query("workouts")
+      .withIndex("by_user_started", (q) => q.eq("userId", args.userId))
+      .order("desc")
+      .take(args.limit || 100);
+
+    // Extract all completed sets for this exercise
+    const history: Array<{
+      workoutId: string;
+      workoutType: string;
+      startedAt: number;
+      completedAt: number | undefined;
+      setNumber: number;
+      targetReps: number;
+      targetWeight: number;
+      completedReps: number | undefined;
+      completedTimeSeconds: number | undefined;
+      failed: boolean;
+    }> = [];
+
+    for (const workout of workouts) {
+      if (workout.status !== "completed") continue;
+      
+      const exerciseSets = workout.sets.filter(
+        (s: any) => s.exerciseId === args.exerciseId && s.type === "work"
+      );
+      
+      for (const set of exerciseSets) {
+        history.push({
+          workoutId: workout._id,
+          workoutType: workout.workoutType || "A",
+          startedAt: workout.startedAt,
+          completedAt: workout.completedAt,
+          setNumber: set.setNumber,
+          targetReps: set.targetReps,
+          targetWeight: set.targetWeight,
+          completedReps: set.completedReps,
+          completedTimeSeconds: set.completedTimeSeconds,
+          failed: set.failed,
+        });
+      }
+    }
+
+    // Sort by date (oldest first for progress view)
+    return history.sort((a, b) => a.startedAt - b.startedAt);
+  },
+});
+
 // Start a new workout
 export const start = mutation({
   args: {
@@ -255,6 +311,7 @@ export const saveCompleted = mutation({
       startedAt: args.completedAt - 3600000, // Estimate start time (1 hour before completion)
       completedAt: args.completedAt,
       status: "completed",
+      workoutType: args.workoutType, // Store the workout type (A, B, or program name)
       plan: args.plan,
       sets: args.sets,
       currentSetIndex: args.sets.length,

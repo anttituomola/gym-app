@@ -7,7 +7,8 @@
   import type { WorkoutSet, PlannedExercise, UserExerciseSettings } from '$lib/types';
   import type { ModificationResponse } from '$lib/types/ai';
   import { generateAllSets } from '$lib/utils/warmup';
-  import { roundToAchievableWeight, getPlateBreakdown } from '$lib/utils/plates';
+  import { roundToAchievableWeight, getPlateBreakdown, getPlateDifference, formatPlateChanges } from '$lib/utils/plates';
+  import { formatDate } from '$lib/utils/date';
   import { navVisibilityStore, convex, api, authStore } from '$lib/convex';
   import { aiSettingsStore, aiAvailable } from '$lib/stores/aiSettings';
   import { restTimer, formattedRestTime } from '$lib/stores/restTimer';
@@ -91,6 +92,28 @@
   let editWeightValue = 0;
   let editWeightError = '';
   let saveWeightToProfile = false;
+  
+  // Edit reps modal state
+  let showEditRepsModal = false;
+  let editRepsValue = 0;
+  let editRepsError = '';
+  let saveRepsToProfile = false;
+  
+  // Exercise history modal state
+  let showExerciseHistoryModal = false;
+  let exerciseHistory: Array<{
+    workoutId: string;
+    workoutType: string;
+    startedAt: number;
+    completedAt: number | undefined;
+    setNumber: number;
+    targetReps: number;
+    targetWeight: number;
+    completedReps: number | undefined;
+    completedTimeSeconds: number | undefined;
+    failed: boolean;
+  }> = [];
+  let exerciseHistoryLoading = false;
   
   // Derived values for exercise view
   $: exerciseSets = activeExerciseId 
@@ -405,8 +428,9 @@
     viewMode = 'overview';
     activeExerciseId = null;
     navVisibilityStore.set({ hideMainNav: false });
-    // Stop the rest timer when going back to overview
-    restTimer.skip();
+    // Note: restTimer is NOT stopped here - it should continue running
+    // even when user navigates to exercises list mid-training.
+    // The timer will stop automatically after the last set of an exercise.
     if (exerciseTimerInterval) clearInterval(exerciseTimerInterval);
     if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
     if (longPressTimer) clearTimeout(longPressTimer);
@@ -796,6 +820,148 @@
     saveWeightToProfile = false;
     
     closeEditWeightModal();
+  }
+  
+  // Edit reps functions
+  function openEditRepsModal() {
+    if (!currentSet) return;
+    editRepsValue = currentSet.targetReps;
+    editRepsError = '';
+    showEditRepsModal = true;
+  }
+  
+  function closeEditRepsModal() {
+    showEditRepsModal = false;
+    editRepsError = '';
+    saveRepsToProfile = false;
+  }
+  
+  async function saveEditedReps() {
+    if (!currentSet || !currentExercise) return;
+    
+    // Validate reps
+    const newReps = parseInt(editRepsValue.toString());
+    if (isNaN(newReps) || newReps < 1) {
+      editRepsError = 'Please enter a valid number of reps';
+      return;
+    }
+    
+    if (newReps > 100) {
+      editRepsError = 'Reps seem too high. Max 100.';
+      return;
+    }
+    
+    // Update all incomplete sets for this exercise with the new reps
+    sets = sets.map(s => {
+      if (s.exerciseId === currentSet!.exerciseId && 
+          s.completedReps === undefined && 
+          s.completedTimeSeconds === undefined) {
+        return { ...s, targetReps: newReps };
+      }
+      return s;
+    });
+    
+    // Also update the plan for this exercise
+    plan = plan.map(p => {
+      if (p.exerciseId === currentSet!.exerciseId) {
+        return { ...p, reps: newReps };
+      }
+      return p;
+    });
+    
+    // Save to user profile if checkbox is checked (for bodyweight exercises)
+    if (saveRepsToProfile && $authStore.userId && currentExercise.supportsBodyweightProgression) {
+      try {
+        await convex.mutation(api.userProfiles.updateExercise, {
+          userId: $authStore.userId as any,
+          exerciseId: currentExercise.id,
+          settings: { targetReps: newReps },
+        });
+        // Also update local defaultWeights
+        defaultWeights[currentExercise.id] = {
+          ...(defaultWeights[currentExercise.id] || {}),
+          targetReps: newReps,
+        };
+      } catch (err) {
+        console.error('Failed to save reps to profile:', err);
+        // Continue anyway - the workout-level change is still applied
+      }
+    }
+    
+    // Update the current set's target reps for the UI
+    if (currentSet) {
+      completedRepsCount = newReps;
+    }
+    
+    // Mark workout as modified
+    workoutModified = true;
+    modificationSummary = `Adjusted ${currentExercise.name} reps to ${newReps}`;
+    
+    // Reset the checkbox for next time
+    saveRepsToProfile = false;
+    
+    closeEditRepsModal();
+  }
+  
+  // Exercise history functions
+  async function openExerciseHistoryModal() {
+    if (!currentExercise || !$authStore.userId) return;
+    
+    showExerciseHistoryModal = true;
+    exerciseHistoryLoading = true;
+    
+    try {
+      const history = await convex.query(api.workouts.getExerciseHistory, {
+        userId: $authStore.userId as any,
+        exerciseId: currentExercise.id,
+        limit: 50
+      });
+      exerciseHistory = history || [];
+    } catch (err) {
+      console.error('Failed to load exercise history:', err);
+      exerciseHistory = [];
+    } finally {
+      exerciseHistoryLoading = false;
+    }
+  }
+  
+  function closeExerciseHistoryModal() {
+    showExerciseHistoryModal = false;
+    exerciseHistory = [];
+  }
+  
+  function getPersonalRecord(history: typeof exerciseHistory): { weight: number; reps: number; date: number } | null {
+    if (history.length === 0) return null;
+    
+    let best: { weight: number; reps: number; date: number } | null = null;
+    
+    for (const set of history) {
+      if (!set.completedReps || set.failed) continue;
+      
+      const weight = set.targetWeight;
+      const reps = set.completedReps;
+      
+      if (!best || weight > best.weight || (weight === best.weight && reps > best.reps)) {
+        best = { weight, reps, date: set.startedAt };
+      }
+    }
+    
+    return best;
+  }
+  
+  function getVolumeTrend(history: typeof exerciseHistory): number {
+    if (history.length < 2) return 0;
+    
+    // Compare recent 3 workouts vs previous 3
+    const recent = history.slice(-3);
+    const previous = history.slice(-6, -3);
+    
+    if (previous.length === 0) return 0;
+    
+    const recentVolume = recent.reduce((sum, s) => sum + (s.completedReps || 0) * s.targetWeight, 0) / recent.length;
+    const prevVolume = previous.reduce((sum, s) => sum + (s.completedReps || 0) * s.targetWeight, 0) / previous.length;
+    
+    return Math.round(((recentVolume - prevVolume) / prevVolume) * 100);
   }
   
   async function finishWorkout() {
@@ -1245,6 +1411,18 @@
           </svg>
           <span class="text-sm">Back</span>
         </button>
+        
+        <!-- History Button -->
+        <button 
+          onclick={openExerciseHistoryModal}
+          class="text-text-muted hover:text-text flex items-center gap-1"
+          aria-label="View exercise history"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+          <span class="text-sm">History</span>
+        </button>
 
       </div>
     </header>
@@ -1259,15 +1437,23 @@
             {@const isCurrent = index === currentExerciseSetIndex}
             {@const isDone = set.completedReps !== undefined || set.completedTimeSeconds !== undefined}
             {@const isWarmup = set.type === 'warmup'}
+            {@const prevSet = index > 0 ? exerciseSets[index - 1] : null}
+            {@const plateChange = isWarmup && prevSet && currentExercise?.equipment.includes('barbell') 
+              ? formatPlateChanges(prevSet.targetWeight, set.targetWeight) 
+              : null}
             <div 
-              class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all shrink-0
+              class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all shrink-0 relative
                 {isCurrent 
                   ? (isWarmup ? 'bg-warning text-bg ring-2 ring-warning ring-offset-2 ring-offset-bg scale-110' : 'bg-primary text-white ring-2 ring-primary ring-offset-2 ring-offset-bg scale-110')
                   : isDone
                     ? (isWarmup ? 'bg-warning text-bg' : 'bg-primary text-white')
                     : (isWarmup ? 'bg-warning/20 text-warning border border-warning/40' : 'bg-surface-light text-text-muted border border-surface-light')
                 }"
-              title={isWarmup ? `Warmup ${set.setNumber}` : `Work set ${set.setNumber}`}
+              title={plateChange && plateChange !== 'No change' 
+                ? `Warmup ${set.setNumber}: ${set.targetWeight}kg\n${plateChange}` 
+                : isWarmup 
+                  ? `Warmup ${set.setNumber}: ${set.targetWeight}kg` 
+                  : `Work set ${set.setNumber}: ${set.targetWeight}kg`}
             >
               {#if isDone}
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1278,10 +1464,32 @@
               {:else}
                 {set.targetWeight > 0 ? set.targetWeight : 'BW'}
               {/if}
+              <!-- Plate change indicator dot -->
+              {#if plateChange && plateChange !== 'No change' && !isDone}
+                <div class="absolute -top-1 -right-1 w-3 h-3 bg-success rounded-full border-2 border-bg" title="Plates to add"></div>
+              {/if}
             </div>
           {/each}
         </div>
       </div>
+      
+      <!-- Plate Change Info for Current Warmup -->
+      {#if currentSet?.type === 'warmup' && currentExercise?.equipment.includes('barbell')}
+        {@const prevSet = exerciseSets[currentExerciseSetIndex - 1]}
+        {#if prevSet}
+          {@const plateChange = formatPlateChanges(prevSet.targetWeight, currentSet.targetWeight)}
+          {#if plateChange && plateChange !== 'No change'}
+            <div class="w-full max-w-xs mb-3">
+              <div class="bg-surface rounded-lg p-2 text-center">
+                <div class="text-xs text-text-muted mb-1">Add plates (per side)</div>
+                <div class="text-sm font-medium text-success">
+                  {plateChange}
+                </div>
+              </div>
+            </div>
+          {/if}
+        {/if}
+      {/if}
       
       <!-- Exercise Info - just the name -->
       <div class="text-center mb-3">
@@ -1307,6 +1515,16 @@
             Bodyweight only
           </div>
         </div>
+        <!-- Edit Reps Button for bodyweight -->
+        <button
+          onclick={openEditRepsModal}
+          class="mb-4 flex items-center gap-2 text-sm text-primary hover:text-primary-dark px-3 py-1.5 bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+          </svg>
+          Edit Reps
+        </button>
         <!-- Progression Mode Toggle (for exercises that support it) -->
         {#if currentExercise?.supportsBodyweightProgression}
           <div class="mb-4">
@@ -1360,16 +1578,29 @@
             <div class="text-3xl font-bold">{currentSet.targetWeight} <span class="text-lg">kg</span></div>
           </div>
         {/if}
-        <!-- Edit Weight Button -->
-        <button
-          onclick={openEditWeightModal}
-          class="mb-4 flex items-center gap-2 text-sm text-primary hover:text-primary-dark px-3 py-1.5 bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-          </svg>
-          Edit Weight
-        </button>
+        <!-- Edit Weight and Reps Buttons -->
+        <div class="flex gap-2 mb-4">
+          <button
+            onclick={openEditWeightModal}
+            class="flex items-center gap-2 text-sm text-primary hover:text-primary-dark px-3 py-1.5 bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            Edit Weight
+          </button>
+          {#if !currentSet.targetTimeSeconds}
+            <button
+              onclick={openEditRepsModal}
+              class="flex items-center gap-2 text-sm text-primary hover:text-primary-dark px-3 py-1.5 bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+              </svg>
+              Edit Reps
+            </button>
+          {/if}
+        </div>
         
         <!-- Progression Mode Toggle (for exercises that support it) -->
         {#if currentExercise?.supportsBodyweightProgression}
@@ -1693,6 +1924,202 @@
           Save
         </button>
       </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Edit Reps Modal -->
+{#if showEditRepsModal && currentSet && currentExercise}
+  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onclick={closeEditRepsModal}>
+    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" onclick={(e) => e.stopPropagation()}>
+      <h3 class="text-xl font-bold mb-2">Edit Reps</h3>
+      <p class="text-text-muted mb-4">
+        Adjust target reps for {currentExercise.name}. This will update all remaining sets.
+      </p>
+      
+      <div class="mb-4">
+        <label class="block text-sm text-text-muted mb-2">New Target Reps</label>
+        <input
+          type="number"
+          bind:value={editRepsValue}
+          min="1"
+          max="100"
+          step="1"
+          class="w-full bg-surface-light rounded-xl p-4 text-2xl font-bold text-center focus:outline-none focus:ring-2 focus:ring-primary"
+          placeholder="Enter reps..."
+          onkeydown={(e) => e.key === 'Enter' && saveEditedReps()}
+        />
+        {#if editRepsError}
+          <p class="text-danger text-sm mt-2">{editRepsError}</p>
+        {/if}
+      </div>
+      
+      <div class="bg-surface-light rounded-xl p-3 mb-4">
+        <div class="text-xs text-text-muted mb-1">Current</div>
+        <div class="font-semibold">{currentSet.targetReps} reps</div>
+      </div>
+      
+      <!-- Save to profile checkbox (only for bodyweight exercises) -->
+      {#if $authStore.userId && currentExercise.supportsBodyweightProgression}
+        <label class="flex items-center gap-3 mb-4 cursor-pointer">
+          <input
+            type="checkbox"
+            bind:checked={saveRepsToProfile}
+            class="w-5 h-5 rounded border-surface-light bg-surface-light text-primary focus:ring-primary"
+          />
+          <span class="text-sm">Save to my profile for future workouts</span>
+        </label>
+      {/if}
+      
+      <div class="flex gap-3">
+        <button
+          onclick={closeEditRepsModal}
+          class="flex-1 px-4 py-3 bg-surface-light hover:bg-surface-light/80 rounded-xl font-medium"
+        >
+          Cancel
+        </button>
+        <button
+          onclick={saveEditedReps}
+          class="flex-1 px-4 py-3 bg-primary hover:bg-primary-dark rounded-xl font-medium"
+        >
+          Save
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Exercise History Modal -->
+{#if showExerciseHistoryModal && currentExercise}
+  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onclick={closeExerciseHistoryModal}>
+    <div class="bg-surface rounded-2xl w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col" onclick={(e) => e.stopPropagation()}>
+      <!-- Header -->
+      <header class="p-4 border-b border-surface-light flex items-center justify-between shrink-0">
+        <div>
+          <h3 class="text-xl font-bold">{currentExercise.name}</h3>
+          <p class="text-sm text-text-muted">History & Progress</p>
+        </div>
+        <button onclick={closeExerciseHistoryModal} class="text-text-muted hover:text-text p-1">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </header>
+      
+      <!-- Content -->
+      <div class="flex-1 overflow-y-auto p-4">
+        {#if exerciseHistoryLoading}
+          <div class="text-center py-8">
+            <div class="animate-spin text-3xl mb-2">⏳</div>
+            <p class="text-text-muted">Loading history...</p>
+          </div>
+        {:else if exerciseHistory.length === 0}
+          <div class="text-center py-8">
+            <div class="text-4xl mb-2">📊</div>
+            <p class="text-text-muted">No history yet</p>
+            <p class="text-sm text-text-muted">Complete some sets to see your progress</p>
+          </div>
+        {:else}
+          {@const pr = getPersonalRecord(exerciseHistory)}
+          {@const volumeTrend = getVolumeTrend(exerciseHistory)}
+          {@const lastWorkout = exerciseHistory[exerciseHistory.length - 1]}
+          
+          <!-- Stats Grid -->
+          <div class="grid grid-cols-3 gap-3 mb-6">
+            <div class="bg-surface-light rounded-xl p-3 text-center">
+              <div class="text-2xl font-bold text-primary">{pr?.weight || 0}</div>
+              <div class="text-xs text-text-muted">kg PR</div>
+              {#if pr}
+                <div class="text-xs text-text-muted">{pr.reps} reps</div>
+              {/if}
+            </div>
+            <div class="bg-surface-light rounded-xl p-3 text-center">
+              <div class="text-2xl font-bold text-primary">{exerciseHistory.length}</div>
+              <div class="text-xs text-text-muted">Total Sets</div>
+            </div>
+            <div class="bg-surface-light rounded-xl p-3 text-center">
+              <div class="text-2xl font-bold {volumeTrend >= 0 ? 'text-success' : 'text-warning'}">
+                {volumeTrend > 0 ? '+' : ''}{volumeTrend}%
+              </div>
+              <div class="text-xs text-text-muted">Volume Trend</div>
+            </div>
+          </div>
+          
+          <!-- Current Target -->
+          <div class="bg-primary/10 rounded-xl p-3 mb-6">
+            <div class="flex justify-between items-center">
+              <div>
+                <div class="text-sm text-text-muted">Current Target</div>
+                <div class="font-semibold">{lastWorkout.targetWeight} kg × {lastWorkout.targetReps} reps</div>
+              </div>
+              <div class="text-right">
+                <div class="text-sm text-text-muted">Last Session</div>
+                <div class="text-sm">{formatDate(lastWorkout.startedAt)}</div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Progress Chart (simplified - weight over time) -->
+          {#if exerciseHistory.length >= 2}
+            <div class="mb-6">
+              <h4 class="font-semibold mb-3">Weight Progress</h4>
+              <div class="bg-surface-light rounded-xl p-4">
+                <!-- Simple bar chart showing last 10 workouts -->
+                <div class="flex items-end gap-1 h-32">
+                  {#each exerciseHistory.slice(-10) as set, i}
+                    {@const height = Math.min(100, (set.targetWeight / (pr?.weight || 100)) * 100)}
+                    <div class="flex-1 flex flex-col items-center gap-1">
+                      <div 
+                        class="w-full rounded-t transition-all {set.failed ? 'bg-warning' : 'bg-primary'}"
+                        style="height: {height}%"
+                        title="{set.targetWeight}kg × {set.completedReps || '?'} reps"
+                      ></div>
+                    </div>
+                  {/each}
+                </div>
+                <div class="flex justify-between text-xs text-text-muted mt-2">
+                  <span>Older</span>
+                  <span>Recent</span>
+                </div>
+              </div>
+            </div>
+          {/if}
+          
+          <!-- Recent History Table -->
+          <div>
+            <h4 class="font-semibold mb-3">Recent Sets</h4>
+            <div class="space-y-2">
+              {#each [...exerciseHistory].reverse().slice(0, 10) as set}
+                <div class="flex justify-between items-center bg-surface-light rounded-lg p-3">
+                  <div>
+                    <div class="font-medium">{set.targetWeight} kg × {set.completedReps || set.targetReps} reps</div>
+                    <div class="text-xs text-text-muted">{formatDate(set.startedAt)} • Workout {set.workoutType}</div>
+                  </div>
+                  <div>
+                    {#if set.failed}
+                      <span class="text-xs px-2 py-1 bg-warning/20 text-warning rounded">Failed</span>
+                    {:else if set.completedReps && set.completedReps >= set.targetReps}
+                      <span class="text-xs px-2 py-1 bg-success/20 text-success rounded">Success</span>
+                    {:else}
+                      <span class="text-xs px-2 py-1 bg-surface rounded">Partial</span>
+                    {/if}
+                  </div>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      </div>
+      
+      <!-- Footer -->
+      <footer class="p-4 border-t border-surface-light">
+        <button
+          onclick={closeExerciseHistoryModal}
+          class="w-full bg-surface-light hover:bg-surface-light/80 rounded-xl p-3 font-medium"
+        >
+          Close
+        </button>
+      </footer>
     </div>
   </div>
 {/if}

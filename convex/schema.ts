@@ -133,6 +133,7 @@ export default defineSchema({
       v.literal("completed"),
       v.literal("cancelled")
     ),
+    workoutType: v.optional(v.string()), // 'A', 'B', or program workout name
     plan: v.array(
       v.object({
         exerciseId: v.string(),
