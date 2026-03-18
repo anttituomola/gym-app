@@ -131,6 +131,14 @@
   
   <!-- Workout Detail Modal -->
   {#if showWorkoutModal && selectedWorkout}
+    {@const totalVolume = selectedWorkout.sets?.reduce((sum: number, s: any) => {
+      if (s.completedReps && s.targetWeight > 0) {
+        return sum + (s.completedReps * s.targetWeight);
+      }
+      return sum;
+    }, 0) || 0}
+    {@const completedSets = selectedWorkout.sets?.filter((s: any) => s.completedReps !== undefined || s.completedTimeSeconds !== undefined).length || 0}
+    {@const totalSets = selectedWorkout.sets?.length || 0}
     <div 
       class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" 
       onclick={closeWorkoutModal}
@@ -221,14 +229,6 @@
         </div>
         
         <!-- Summary -->
-        {@const totalVolume = selectedWorkout.sets?.reduce((sum: number, s: any) => {
-          if (s.completedReps && s.targetWeight > 0) {
-            return sum + (s.completedReps * s.targetWeight);
-          }
-          return sum;
-        }, 0) || 0}
-        {@const completedSets = selectedWorkout.sets?.filter((s: any) => s.completedReps !== undefined || s.completedTimeSeconds !== undefined).length || 0}
-        {@const totalSets = selectedWorkout.sets?.length || 0}
         
         <div class="mt-6 pt-4 border-t border-surface-light">
           <div class="grid grid-cols-2 gap-4 text-center">
