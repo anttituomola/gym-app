@@ -1806,22 +1806,24 @@
     </main>
     
     <!-- Quick Switch to Other Exercises (superset support) -->
-    {@const otherExercises = getOtherIncompleteExercises(currentExercise.id)}
-    {#if otherExercises.length > 0}
-      <div class="w-full px-4 pb-2">
-        <div class="text-xs text-text-muted text-center mb-2">Or switch to:</div>
-        <div class="flex flex-wrap justify-center gap-2">
-          {#each otherExercises as ex}
-            <button
-              onclick={() => startExercise(ex.id)}
-              class="px-3 py-1.5 bg-surface-light hover:bg-surface-light/80 rounded-lg text-sm transition-colors"
-            >
-              {ex.name}
-              <span class="text-text-muted text-xs">({ex.nextSetNumber}/{ex.totalSets})</span>
-            </button>
-          {/each}
+    {#if currentExercise}
+      {@const otherExercises = getOtherIncompleteExercises(currentExercise.id)}
+      {#if otherExercises.length > 0}
+        <div class="w-full px-4 pb-2">
+          <div class="text-xs text-text-muted text-center mb-2">Or switch to:</div>
+          <div class="flex flex-wrap justify-center gap-2">
+            {#each otherExercises as ex}
+              <button
+                onclick={() => startExercise(ex.id)}
+                class="px-3 py-1.5 bg-surface-light hover:bg-surface-light/80 rounded-lg text-sm transition-colors"
+              >
+                {ex.name}
+                <span class="text-text-muted text-xs">({ex.nextSetNumber}/{ex.totalSets})</span>
+              </button>
+            {/each}
+          </div>
         </div>
-      </div>
+      {/if}
     {/if}
     
     <!-- Footer Actions -->
