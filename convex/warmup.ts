@@ -21,6 +21,14 @@ export function calculateWarmupSets(exerciseId: string, workWeight: number): Wor
   const exercise = getExerciseById(exerciseId);
   if (!exercise) return [];
 
+  // Skip warmups for bodyweight-only exercises (no equipment or only 'bodyweight' listed)
+  const isBodyweightOnly = exercise.equipment.length === 0 || 
+    (exercise.equipment.length === 1 && exercise.equipment[0] === 'bodyweight');
+  if (isBodyweightOnly) return [];
+
+  // Skip warmups when doing bodyweight-only (0 added weight) for exercises that support it
+  if (workWeight === 0) return [];
+
   const sets: WorkoutSet[] = [];
   let setNumber = 1;
 
@@ -42,7 +50,7 @@ export function calculateWarmupSets(exerciseId: string, workWeight: number): Wor
         exerciseId,
         setNumber: setNumber++,
         type: 'warmup',
-        targetReps: step.reps,
+        targetReps: Math.max(2, step.reps),
         targetWeight: weight,
         failed: false
       });

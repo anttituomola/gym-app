@@ -9,9 +9,13 @@ export function calculateWarmupSets(exerciseId: string, workWeight: number): Wor
   const exercise = getExerciseById(exerciseId);
   if (!exercise) return [];
 
-  // Skip warmups for bodyweight-only exercises
-  const isBodyweightOnly = exercise.equipment.length === 1 && exercise.equipment[0] === 'bodyweight';
+  // Skip warmups for bodyweight-only exercises (no equipment or only 'bodyweight' listed)
+  const isBodyweightOnly = exercise.equipment.length === 0 || 
+    (exercise.equipment.length === 1 && exercise.equipment[0] === 'bodyweight');
   if (isBodyweightOnly) return [];
+
+  // Skip warmups when doing bodyweight-only (0 added weight) for exercises that support it
+  if (workWeight === 0) return [];
 
   // For very light weights (just the bar or close to it), minimal warmup
   if (workWeight <= BAR_WEIGHT + 5) {
@@ -46,7 +50,7 @@ export function calculateWarmupSets(exerciseId: string, workWeight: number): Wor
   if (isBarbell) {
     // Target percentages for warmup sets (before work weight)
     const targetPercentages = [0.40, 0.60, 0.80]; // 40%, 60%, 80% of work weight
-    const repsForStep = [5, 3, 1]; // Reps taper as weight increases
+    const repsForStep = [5, 3, 2]; // Reps taper as weight increases, min 2 reps
     
     let currentWeight = BAR_WEIGHT;
     let stepIndex = 0;
@@ -67,7 +71,7 @@ export function calculateWarmupSets(exerciseId: string, workWeight: number): Wor
           exerciseId,
           setNumber: sets.length + 1,
           type: 'warmup',
-          targetReps: repsForStep[stepIndex] || 1,
+          targetReps: repsForStep[stepIndex] || 3,
           targetWeight: optimalWeight,
           failed: false
         });
@@ -91,7 +95,7 @@ export function calculateWarmupSets(exerciseId: string, workWeight: number): Wor
           exerciseId,
           setNumber: sets.length + 1,
           type: 'warmup',
-          targetReps: Math.max(1, 5 - sets.length), // Taper reps
+          targetReps: Math.max(3, 5 - sets.length), // Taper reps, min 3
           targetWeight: optimalWeight,
           failed: false
         });

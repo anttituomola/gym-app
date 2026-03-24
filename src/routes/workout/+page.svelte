@@ -9,6 +9,7 @@
   import { generateAllSets } from '$lib/utils/warmup';
   import { roundToAchievableWeight, getPlateBreakdown, getPlateDifference, formatPlateChanges } from '$lib/utils/plates';
   import { formatDate } from '$lib/utils/date';
+  import { formatWorkoutTypeLabel } from '$lib/utils/workoutLabel';
   import { navVisibilityStore, convex, api, authStore } from '$lib/convex';
   import { aiSettingsStore, aiAvailable } from '$lib/stores/aiSettings';
   import { restTimer, formattedRestTime } from '$lib/stores/restTimer';
@@ -219,7 +220,8 @@
             const useBodyweightProgression = exerciseData?.supportsBodyweightProgression && settings?.useBodyweightProgression;
             const isBarbell = exerciseData?.equipment.includes('barbell');
             
-            let weight = useBodyweightProgression ? 0 : (ex.startingWeight ?? settings?.currentWeight ?? 20);
+            // Prefer profile currentWeight (progression); program startingWeight is only a fallback for new exercises
+            let weight = useBodyweightProgression ? 0 : (settings?.currentWeight ?? ex.startingWeight ?? 20);
             // Round barbell weights to achievable plate combinations
             if (isBarbell && weight > 20) {
               weight = roundToAchievableWeight(weight);
@@ -420,8 +422,10 @@
       return;
     }
     
-    // Not the last set - start rest timer
-    startRest(isFailure);
+    // Not the last set - start rest timer (only for work sets, not warmups)
+    if (currentSet?.type !== 'warmup') {
+      startRest(isFailure);
+    }
   }
   
   function backToOverview() {
@@ -592,14 +596,12 @@
       const currentSetIndex = exerciseSets.findIndex(s => s.id === currentSet!.id);
       const nextSet = exerciseSets[currentSetIndex + 1];
       if (nextSet && nextSet.type === 'work') {
-        // This was the last warmup - set flag so reset block doesn't clear rest timer
+        // This was the last warmup - move to work set without rest timer
         lastSetId = nextSet.id;
-        // Reset setIsComplete so next set doesn't appear done
         setIsComplete = false;
         completedRepsCount = nextSet.targetReps;
         tapCount = 0;
-        // Start rest timer immediately after last warmup
-        startRest(false);
+        // No rest timer between last warmup and first work set
       }
       return;
     }
@@ -1095,6 +1097,47 @@
     return completed === total && total > 0;
   }
   
+  // Get other incomplete exercises for superset quick-switch
+  function getOtherIncompleteExercises(currentId: string): Array<{ id: string; name: string; nextSetNumber: number; totalSets: number }> {
+    return plan
+      .filter(p => p.exerciseId !== currentId && !isExerciseComplete(p.exerciseId))
+      .map(p => {
+        const exerciseData = getExerciseById(p.exerciseId);
+        const exerciseSets = sets.filter(s => s.exerciseId === p.exerciseId);
+        const completedCount = exerciseSets.filter(s => s.completedReps !== undefined || s.completedTimeSeconds !== undefined).length;
+        const nextSet = exerciseSets.find(s => s.completedReps === undefined && s.completedTimeSeconds === undefined);
+        return {
+          id: p.exerciseId,
+          name: exerciseData?.name || p.exerciseId,
+          nextSetNumber: completedCount + 1,
+          totalSets: exerciseSets.length
+        };
+      });
+  }
+  
+  // Get next set info for an exercise
+  function getNextSetInfo(exerciseId: string): { currentSet: number; totalSets: number; isResting: boolean } | null {
+    const exerciseSets = sets.filter(s => s.exerciseId === exerciseId);
+    const completedCount = exerciseSets.filter(s => s.completedReps !== undefined || s.completedTimeSeconds !== undefined).length;
+    const hasIncomplete = exerciseSets.some(s => s.completedReps === undefined && s.completedTimeSeconds === undefined);
+    
+    if (!hasIncomplete) return null;
+    
+    // Check if rest timer is running for this exercise (last completed was recent)
+    const lastCompleted = exerciseSets
+      .filter(s => s.completedAt)
+      .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))[0];
+    
+    const isResting = lastCompleted && $restTimer.isRunning && 
+      (Date.now() - (lastCompleted.completedAt || 0)) < 300000; // Within 5 min
+    
+    return {
+      currentSet: completedCount + 1,
+      totalSets: exerciseSets.length,
+      isResting
+    };
+  }
+  
   // Auto-save functions
   function saveWorkoutState() {
     if (!workoutStarted || sets.length === 0) return;
@@ -1287,7 +1330,7 @@
           {#if workoutModified}
             <span class="text-xs px-2 py-1 bg-primary/20 text-primary rounded-full">Modified</span>
           {/if}
-          <span class="text-sm text-text-muted">Workout {workoutType}</span>
+          <span class="text-sm text-text-muted">{formatWorkoutTypeLabel(workoutType)}</span>
         </div>
       </div>
       <div class="flex items-center justify-between">
@@ -1318,6 +1361,7 @@
         {@const progress = getExerciseProgress(exercise.exerciseId)}
         {@const isComplete = isExerciseComplete(exercise.exerciseId)}
         {@const exerciseData = getExerciseById(exercise.exerciseId)}
+        {@const nextSetInfo = getNextSetInfo(exercise.exerciseId)}
         <div class="bg-surface rounded-xl p-4 {isComplete ? 'opacity-60' : ''}">
           <div class="flex items-center gap-3">
             <!-- Reorder buttons -->
@@ -1354,12 +1398,22 @@
                 <div>
                   <h3 class="font-semibold {isComplete ? 'line-through text-text-muted' : ''}">{exerciseData?.name}</h3>
                   <p class="text-sm text-text-muted">
-                    {#if exerciseData?.isTimeBased}
-                      {exercise.sets} sets × {exercise.timeSeconds || exerciseData?.defaultTimeSeconds || 60} sec hold
-                    {:else if exerciseData?.supportsBodyweightProgression && defaultWeights[exercise.exerciseId]?.useBodyweightProgression}
-                      {exercise.sets} sets × {defaultWeights[exercise.exerciseId]?.targetReps || exerciseData?.defaultReps || exercise.reps} reps (bodyweight)
+                    {#if isComplete}
+                      Complete
+                    {:else if nextSetInfo}
+                      Set {nextSetInfo.currentSet} of {nextSetInfo.totalSets}
+                      {#if exerciseData?.isTimeBased}
+                        × {exercise.timeSeconds || exerciseData?.defaultTimeSeconds || 60}s
+                      {:else if exerciseData?.supportsBodyweightProgression && defaultWeights[exercise.exerciseId]?.useBodyweightProgression}
+                        × {defaultWeights[exercise.exerciseId]?.targetReps || exerciseData?.defaultReps || exercise.reps} reps (BW)
+                      {:else}
+                        @ {exercise.weight}kg
+                      {/if}
+                      {#if nextSetInfo.isResting}
+                        <span class="text-primary">• Resting</span>
+                      {/if}
                     {:else}
-                      {exercise.sets} sets × {exercise.reps} reps @ {exercise.weight}kg
+                      {exercise.sets} sets
                     {/if}
                   </p>
                 </div>
@@ -1461,8 +1515,10 @@
                 </svg>
               {:else if set.targetTimeSeconds}
                 {set.targetTimeSeconds}s
+              {:else if set.targetWeight === 0}
+                {set.targetReps}
               {:else}
-                {set.targetWeight > 0 ? set.targetWeight : 'BW'}
+                {set.targetWeight}
               {/if}
               <!-- Plate change indicator dot -->
               {#if plateChange && plateChange !== 'No change' && !isDone}
@@ -1749,36 +1805,57 @@
       
     </main>
     
-    <!-- Footer Actions (only show when rest timer is not running) -->
-    {#if !$restTimer.isRunning}
-      <footer class="bg-surface border-t border-surface-light p-4">
-        <div class="flex items-center justify-between">
-          <button
-            onclick={skipSet}
-            class="px-4 py-2 text-text-muted hover:text-text"
-          >
-            Skip Set
-          </button>
-          
-          {#if currentSet.type === 'warmup'}
-            <div class="text-center text-text-muted text-sm">
-              No rest on warmup
-            </div>
-          {:else}
-            <div class="text-center text-text-muted text-sm">
-              Rest after set
-            </div>
-          {/if}
-          
-          <button
-            onclick={backToOverview}
-            class="px-4 py-2 text-primary hover:text-primary-dark font-medium"
-          >
-            Done
-          </button>
+    <!-- Quick Switch to Other Exercises (superset support) -->
+    {@const otherExercises = getOtherIncompleteExercises(currentExercise.id)}
+    {#if otherExercises.length > 0}
+      <div class="w-full px-4 pb-2">
+        <div class="text-xs text-text-muted text-center mb-2">Or switch to:</div>
+        <div class="flex flex-wrap justify-center gap-2">
+          {#each otherExercises as ex}
+            <button
+              onclick={() => startExercise(ex.id)}
+              class="px-3 py-1.5 bg-surface-light hover:bg-surface-light/80 rounded-lg text-sm transition-colors"
+            >
+              {ex.name}
+              <span class="text-text-muted text-xs">({ex.nextSetNumber}/{ex.totalSets})</span>
+            </button>
+          {/each}
         </div>
-      </footer>
+      </div>
     {/if}
+    
+    <!-- Footer Actions -->
+    <footer class="bg-surface border-t border-surface-light p-4">
+      <div class="flex items-center justify-between">
+        <button
+          onclick={skipSet}
+          class="px-4 py-2 text-text-muted hover:text-text"
+        >
+          Skip Set
+        </button>
+        
+        {#if currentSet.type === 'warmup'}
+          <div class="text-center text-text-muted text-sm">
+            No rest on warmup
+          </div>
+        {:else if $restTimer.isRunning}
+          <div class="text-center text-primary text-sm font-medium">
+            Rest: {$formattedRestTime}
+          </div>
+        {:else}
+          <div class="text-center text-text-muted text-sm">
+            Rest after set
+          </div>
+        {/if}
+        
+        <button
+          onclick={backToOverview}
+          class="px-4 py-2 text-primary hover:text-primary-dark font-medium"
+        >
+          Done
+        </button>
+      </div>
+    </footer>
   </div>
 {/if}
 
@@ -2093,7 +2170,7 @@
                 <div class="flex justify-between items-center bg-surface-light rounded-lg p-3">
                   <div>
                     <div class="font-medium">{set.targetWeight} kg × {set.completedReps || set.targetReps} reps</div>
-                    <div class="text-xs text-text-muted">{formatDate(set.startedAt)} • Workout {set.workoutType}</div>
+                    <div class="text-xs text-text-muted">{formatDate(set.startedAt)} • {formatWorkoutTypeLabel(set.workoutType)}</div>
                   </div>
                   <div>
                     {#if set.failed}

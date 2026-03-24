@@ -4,6 +4,7 @@
   import { DEFAULT_WORKOUT_A, DEFAULT_WORKOUT_B, getExerciseById } from '$lib/data/exercises';
   import type { TrainingProgram } from '$lib/types';
   import { formatDate, formatDateWithWeekday } from '$lib/utils/date';
+  import { formatWorkoutTypeLabel } from '$lib/utils/workoutLabel';
   import { onMount } from 'svelte';
   
   let profile: any = $state(null);
@@ -66,31 +67,34 @@
   
   function calculateNextWorkout() {
     if (activeProgram) {
-      // For programs: find the next workout in sequence
-      const lastProgramWorkout = recentWorkouts.find(w => w.programId === activeProgram!.id);
-      if (lastProgramWorkout) {
-        // Find which workout index was done last
-        const lastIndex = activeProgram.workouts.findIndex((w, i) => 
-          w.name === lastProgramWorkout.workoutType || 
-          lastProgramWorkout.workoutType?.includes(String.fromCharCode(65 + i))
-        );
-        const nextIndex = (lastIndex + 1) % activeProgram.workouts.length;
-        const nextWorkoutData = activeProgram.workouts[nextIndex];
-        nextWorkout = {
-          type: 'program',
-          index: nextIndex,
-          name: nextWorkoutData.name,
-          description: `${nextWorkoutData.exercises.length} exercises`
-        };
-      } else {
-        // No program workouts done yet, recommend first one
-        nextWorkout = {
-          type: 'program',
-          index: 0,
-          name: activeProgram.workouts[0].name,
-          description: `${activeProgram.workouts[0].exercises.length} exercises`
-        };
+      // Match by workout name (sessions don't store programId). recentWorkouts is newest-first.
+      const programNames = activeProgram.workouts.map((w) => w.name);
+      const lastProgramWorkout = recentWorkouts.find((w) => {
+        const t = w.workoutType;
+        if (!t) return false;
+        return programNames.some((name) => name === t);
+      });
+      if (lastProgramWorkout && lastProgramWorkout.workoutType) {
+        const lastIndex = programNames.indexOf(lastProgramWorkout.workoutType);
+        if (lastIndex >= 0) {
+          const nextIndex = (lastIndex + 1) % activeProgram.workouts.length;
+          const nextWorkoutData = activeProgram.workouts[nextIndex];
+          nextWorkout = {
+            type: 'program',
+            index: nextIndex,
+            name: nextWorkoutData.name,
+            description: `${nextWorkoutData.exercises.length} exercises`
+          };
+          return;
+        }
       }
+      // No matching program session in history — suggest first template
+      nextWorkout = {
+        type: 'program',
+        index: 0,
+        name: activeProgram.workouts[0].name,
+        description: `${activeProgram.workouts[0].exercises.length} exercises`
+      };
     } else {
       // For default A/B workouts
       const lastWorkout = recentWorkouts[0];
@@ -548,7 +552,7 @@
             >
               <div class="flex justify-between items-center">
                 <div>
-                  <span class="font-medium">Workout {workout.workoutType || 'A'}</span>
+                  <span class="font-medium">{formatWorkoutTypeLabel(workout.workoutType)}</span>
                   <span class="text-xs text-text-muted ml-2">
                     {completedSets}/{totalSets} sets
                   </span>
@@ -575,7 +579,7 @@
       <!-- Header -->
       <header class="p-4 border-b border-surface-light flex items-center justify-between">
         <div>
-          <h3 class="text-xl font-bold">Workout {selectedWorkout.workoutType || 'A'}</h3>
+          <h3 class="text-xl font-bold">{formatWorkoutTypeLabel(selectedWorkout.workoutType)}</h3>
           <p class="text-sm text-text-muted">
             {formatDateWithWeekday(selectedWorkout.completedAt || selectedWorkout.startedAt)}
           </p>
