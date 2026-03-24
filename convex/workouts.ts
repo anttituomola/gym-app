@@ -215,34 +215,47 @@ export const complete = mutation({
         
         const anyFailed = exerciseSets.some(s => s.failed);
 
-        const settings = updatedExercises[planItem.exerciseId];
-        if (settings) {
-          if (allCompleted) {
-            settings.successCount++;
-            settings.failureCount = 0;
-
-            // Check for progression
-            if (settings.successCount >= 1) { // Progress after each success for simplicity
-              settings.currentWeight += settings.incrementKg;
-              // Round to achievable weight with available plates
-              settings.currentWeight = roundToAchievableWeight(settings.currentWeight);
-              settings.successCount = 0;
-            }
-          } else if (anyFailed) {
-            settings.failureCount++;
-            settings.successCount = 0;
-
-            // Check for deload
-            if (settings.failureCount >= settings.deloadAfterFailures) {
-              settings.currentWeight *= (1 - settings.deloadPercent);
-              // Round to achievable weight with available plates
-              settings.currentWeight = roundToAchievableWeight(settings.currentWeight);
-              settings.failureCount = 0;
-            }
-          }
-
-          updatedExercises[planItem.exerciseId] = settings;
+        // Get or create exercise settings with defaults
+        let settings = updatedExercises[planItem.exerciseId];
+        if (!settings) {
+          // Create default settings if exercise doesn't exist in profile
+          settings = {
+            currentWeight: planItem.weight,
+            weightUnit: 'kg',
+            successCount: 0,
+            failureCount: 0,
+            incrementKg: planItem.exerciseId === 'overhead-press' ? 1.25 : 
+                        planItem.exerciseId === 'deadlift' ? 5 : 2.5,
+            deloadAfterFailures: 3,
+            deloadPercent: 0.1
+          };
         }
+        
+        if (allCompleted) {
+          settings.successCount++;
+          settings.failureCount = 0;
+
+          // Check for progression
+          if (settings.successCount >= 1) { // Progress after each success for simplicity
+            settings.currentWeight += settings.incrementKg;
+            // Round to achievable weight with available plates
+            settings.currentWeight = roundToAchievableWeight(settings.currentWeight);
+            settings.successCount = 0;
+          }
+        } else if (anyFailed) {
+          settings.failureCount++;
+          settings.successCount = 0;
+
+          // Check for deload
+          if (settings.failureCount >= settings.deloadAfterFailures) {
+            settings.currentWeight *= (1 - settings.deloadPercent);
+            // Round to achievable weight with available plates
+            settings.currentWeight = roundToAchievableWeight(settings.currentWeight);
+            settings.failureCount = 0;
+          }
+        }
+
+        updatedExercises[planItem.exerciseId] = settings;
       }
 
       await ctx.db.patch(profile._id, { exercises: updatedExercises });
