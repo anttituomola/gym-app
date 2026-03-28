@@ -428,7 +428,21 @@
     }
   }
   
+  function flushPendingWorkSet() {
+    if (!currentSet || currentSet.type !== 'work') return;
+    if (currentSet.completedReps !== undefined || currentSet.completedTimeSeconds !== undefined) return;
+    if (!saveDebounceTimer && !setIsComplete) return;
+
+    const isFailure = completedRepsCount < currentSet.targetReps;
+    sets = sets.map((s) =>
+      s.id === currentSet.id
+        ? { ...s, completedReps: completedRepsCount, completedAt: Date.now(), failed: isFailure }
+        : s
+    );
+  }
+  
   function backToOverview() {
+    flushPendingWorkSet();
     viewMode = 'overview';
     activeExerciseId = null;
     navVisibilityStore.set({ hideMainNav: false });
@@ -967,6 +981,7 @@
   }
   
   async function finishWorkout() {
+    flushPendingWorkSet();
     // Save workout to database
     const authState = $authStore;
     if (authState.userId) {
