@@ -58,6 +58,7 @@ export const create = mutation({
               })
             ),
             restSeconds: v.optional(v.number()),
+            timeSeconds: v.optional(v.number()),
           })
         ),
       })
@@ -102,6 +103,7 @@ export const update = mutation({
                 })
               ),
               restSeconds: v.optional(v.number()),
+              timeSeconds: v.optional(v.number()),
             })
           ),
         })

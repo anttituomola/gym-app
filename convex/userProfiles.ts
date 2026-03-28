@@ -79,6 +79,8 @@ export const updateExercise = mutation({
       useBodyweightProgression: v.optional(v.boolean()),
       targetReps: v.optional(v.number()),
       incrementReps: v.optional(v.number()),
+      holdSeconds: v.optional(v.number()),
+      incrementHoldSeconds: v.optional(v.number()),
     }),
   },
   handler: async (ctx, args) => {

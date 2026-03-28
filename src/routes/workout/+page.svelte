@@ -100,6 +100,11 @@
   let editRepsError = '';
   let saveRepsToProfile = false;
   
+  // Edit hold time (time-based exercises)
+  let showEditTimeModal = false;
+  let editTimeValue = 60;
+  let editTimeError = '';
+  
   // Exercise history modal state
   let showExerciseHistoryModal = false;
   let exerciseHistory: Array<{
@@ -221,7 +226,14 @@
             const isBarbell = exerciseData?.equipment.includes('barbell');
             
             // Prefer profile currentWeight (progression); program startingWeight is only a fallback for new exercises
-            let weight = useBodyweightProgression ? 0 : (settings?.currentWeight ?? ex.startingWeight ?? 20);
+            let weight: number;
+            if (useBodyweightProgression) {
+              weight = 0;
+            } else if (isTimeBased) {
+              weight = settings?.currentWeight ?? ex.startingWeight ?? 0;
+            } else {
+              weight = settings?.currentWeight ?? ex.startingWeight ?? 20;
+            }
             // Round barbell weights to achievable plate combinations
             if (isBarbell && weight > 20) {
               weight = roundToAchievableWeight(weight);
@@ -232,7 +244,9 @@
               sets: ex.sets,
               reps: isTimeBased ? 0 : (useBodyweightProgression ? (settings?.targetReps || exerciseData?.defaultReps || ex.reps) : ex.reps),
               weight,
-              timeSeconds: isTimeBased ? (exerciseData?.defaultTimeSeconds || 60) : undefined,
+              timeSeconds: isTimeBased
+                ? (ex.timeSeconds ?? settings?.holdSeconds ?? exerciseData?.defaultTimeSeconds ?? 60)
+                : undefined,
             };
           });
         } else {
@@ -271,7 +285,9 @@
           sets: id === 'deadlift' ? 1 : 3,
           reps: isTimeBased ? 0 : (useBodyweightProgression ? (settings?.targetReps || exerciseData?.defaultReps || 5) : 5),
           weight,
-          timeSeconds: isTimeBased ? (exerciseData?.defaultTimeSeconds || 60) : undefined,
+          timeSeconds: isTimeBased
+            ? (settings?.holdSeconds ?? exerciseData?.defaultTimeSeconds ?? 60)
+            : undefined,
         };
       });
     }
@@ -393,6 +409,12 @@
   
   function completeTimerSet(isFailure: boolean) {
     if (!currentSet) return;
+
+    const finishingSet = currentSet;
+    const warmupIdx = exerciseSets.findIndex((s) => s.id === finishingSet.id);
+    const nextInExercise = warmupIdx >= 0 ? exerciseSets[warmupIdx + 1] : undefined;
+    const lastWarmupToFirstWork =
+      finishingSet.type === 'warmup' && nextInExercise?.type === 'work';
     
     if (exerciseTimerInterval) {
       clearInterval(exerciseTimerInterval);
@@ -404,26 +426,35 @@
     
     // Calculate completed time (if failure, use elapsed time; if success, use full target)
     const completedTime = isFailure 
-      ? (currentSet.targetTimeSeconds || 0) - exerciseTimerRemaining
-      : (currentSet.targetTimeSeconds || 0);
+      ? (finishingSet.targetTimeSeconds || 0) - exerciseTimerRemaining
+      : (finishingSet.targetTimeSeconds || 0);
     
     // Save the set immediately for timer-based exercises
     sets = sets.map((s) => 
-      s.id === currentSet!.id 
+      s.id === finishingSet.id 
         ? { ...s, completedTimeSeconds: completedTime, completedAt: Date.now(), failed: isFailure }
         : s
     );
     
-    // Check if this is the last set of the exercise
-    const remainingSets = exerciseSets.filter(s => s.id !== currentSet!.id && s.completedReps === undefined && s.completedTimeSeconds === undefined);
-    if (remainingSets.length === 0) {
+    const exSetsAfter = sets
+      .filter((s) => s.exerciseId === finishingSet.exerciseId)
+      .sort((a, b) => a.setNumber - b.setNumber);
+    const remainingAfter = exSetsAfter.filter(
+      (s) => s.completedReps === undefined && s.completedTimeSeconds === undefined
+    );
+    if (remainingAfter.length === 0) {
       // Last set - go back to overview after showing completion briefly
       setTimeout(() => backToOverview(), 1500);
       return;
     }
     
-    // Not the last set - start rest timer (only for work sets, not warmups)
-    if (currentSet?.type !== 'warmup') {
+    // Rest after last warmup before first work set (same duration as success between work sets)
+    if (lastWarmupToFirstWork) {
+      startRest(false);
+      return;
+    }
+    // Not the last set - start rest timer for work sets only (not between warmups)
+    if (finishingSet.type !== 'warmup') {
       startRest(isFailure);
     }
   }
@@ -606,16 +637,11 @@
       );
       
       // Check if this was the last warmup (next set is work set)
-      // We need to check the array BEFORE the state updates, so use the current exerciseSets
       const currentSetIndex = exerciseSets.findIndex(s => s.id === currentSet!.id);
       const nextSet = exerciseSets[currentSetIndex + 1];
       if (nextSet && nextSet.type === 'work') {
-        // This was the last warmup - move to work set without rest timer
-        lastSetId = nextSet.id;
-        setIsComplete = false;
-        completedRepsCount = nextSet.targetReps;
-        tapCount = 0;
-        // No rest timer between last warmup and first work set
+        // Same rest as between successful work sets before the first work set
+        startRest(false);
       }
       return;
     }
@@ -917,6 +943,75 @@
     saveRepsToProfile = false;
     
     closeEditRepsModal();
+  }
+  
+  function openEditTimeModal() {
+    if (!currentSet?.targetTimeSeconds) return;
+    editTimeValue = currentSet.targetTimeSeconds;
+    editTimeError = '';
+    showEditTimeModal = true;
+  }
+  
+  function closeEditTimeModal() {
+    showEditTimeModal = false;
+    editTimeError = '';
+  }
+  
+  async function saveEditedTime() {
+    if (!currentSet || !currentExercise) return;
+    
+    const newSeconds = parseInt(editTimeValue.toString(), 10);
+    if (isNaN(newSeconds) || newSeconds < 1) {
+      editTimeError = 'Please enter a valid hold time in seconds';
+      return;
+    }
+    if (newSeconds > 600) {
+      editTimeError = 'Max 600 seconds (10 minutes).';
+      return;
+    }
+    
+    sets = sets.map((s) => {
+      if (
+        s.exerciseId === currentSet!.exerciseId &&
+        s.completedReps === undefined &&
+        s.completedTimeSeconds === undefined
+      ) {
+        return { ...s, targetTimeSeconds: newSeconds };
+      }
+      return s;
+    });
+    
+    plan = plan.map((p) => {
+      if (p.exerciseId === currentSet!.exerciseId) {
+        return { ...p, timeSeconds: newSeconds };
+      }
+      return p;
+    });
+    
+    if (!isTimerRunning && !timerCompleted) {
+      exerciseTimerRemaining = newSeconds;
+    }
+    
+    if (currentExercise.isTimeBased && $authStore.userId) {
+      try {
+        await convex.mutation(api.userProfiles.updateExercise, {
+          userId: $authStore.userId as any,
+          exerciseId: currentExercise.id,
+          settings: { holdSeconds: newSeconds }
+        });
+        defaultWeights[currentExercise.id] = {
+          ...(defaultWeights[currentExercise.id] || {}),
+          holdSeconds: newSeconds
+        };
+      } catch (err) {
+        console.error('Failed to save hold to profile:', err);
+      }
+    }
+    
+    workoutModified = true;
+    modificationSummary = `Adjusted ${currentExercise.name} hold to ${newSeconds}s`;
+    
+    closeEditTimeModal();
   }
   
   // Exercise history functions
@@ -1518,11 +1613,17 @@
                     ? (isWarmup ? 'bg-warning text-bg' : 'bg-primary text-white')
                     : (isWarmup ? 'bg-warning/20 text-warning border border-warning/40' : 'bg-surface-light text-text-muted border border-surface-light')
                 }"
-              title={plateChange && plateChange !== 'No change' 
-                ? `Warmup ${set.setNumber}: ${set.targetWeight}kg\n${plateChange}` 
-                : isWarmup 
-                  ? `Warmup ${set.setNumber}: ${set.targetWeight}kg` 
-                  : `Work set ${set.setNumber}: ${set.targetWeight}kg`}
+              title={isWarmup
+                ? plateChange && plateChange !== 'No change'
+                  ? `Warmup ${set.setNumber}: ${set.targetWeight}kg\n${plateChange}`
+                  : useBodyweightProgression
+                    ? `Warmup ${set.setNumber}: ${set.targetReps} reps`
+                    : `Warmup ${set.setNumber}: ${set.targetWeight}kg`
+                : set.targetTimeSeconds
+                  ? `Work set ${set.setNumber}: ${set.targetTimeSeconds}s hold`
+                  : useBodyweightProgression
+                    ? `Work set ${set.setNumber}: ${set.targetReps} reps`
+                    : `Work set ${set.setNumber}: ${set.targetWeight}kg`}
             >
               {#if isDone}
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1530,6 +1631,8 @@
                 </svg>
               {:else if set.targetTimeSeconds}
                 {set.targetTimeSeconds}s
+              {:else if useBodyweightProgression}
+                {set.targetReps}
               {:else if set.targetWeight === 0}
                 {set.targetReps}
               {:else}
@@ -1576,6 +1679,28 @@
           <div class="text-xs text-primary mt-1">
             Hold position steady
           </div>
+        </div>
+        <div class="flex flex-wrap gap-2 mb-4 justify-center">
+          <button
+            onclick={openEditTimeModal}
+            class="flex items-center gap-2 text-sm text-primary hover:text-primary-dark px-3 py-1.5 bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            Edit hold time
+          </button>
+          {#if currentExercise.equipment.length > 0}
+            <button
+              onclick={openEditWeightModal}
+              class="flex items-center gap-2 text-sm text-primary hover:text-primary-dark px-3 py-1.5 bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              Edit weight
+            </button>
+          {/if}
         </div>
       {:else if useBodyweightProgression}
         <!-- Bodyweight Progression Display (reps-based) -->
@@ -2074,6 +2199,55 @@
         </button>
         <button
           onclick={saveEditedReps}
+          class="flex-1 px-4 py-3 bg-primary hover:bg-primary-dark rounded-xl font-medium"
+        >
+          Save
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Edit hold time (time-based exercises) -->
+{#if showEditTimeModal && currentSet && currentExercise && currentSet.targetTimeSeconds}
+  <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onclick={closeEditTimeModal}>
+    <div class="bg-surface rounded-2xl p-6 max-w-sm w-full" onclick={(e) => e.stopPropagation()}>
+      <h3 class="text-xl font-bold mb-2">Edit hold time</h3>
+      <p class="text-text-muted mb-4">
+        Adjust target hold for {currentExercise.name}. This updates all remaining sets in this session.
+      </p>
+      
+      <div class="mb-4">
+        <label class="block text-sm text-text-muted mb-2">Hold (seconds)</label>
+        <input
+          type="number"
+          bind:value={editTimeValue}
+          min="1"
+          max="600"
+          step="1"
+          class="w-full bg-surface-light rounded-xl p-4 text-2xl font-bold text-center focus:outline-none focus:ring-2 focus:ring-primary"
+          placeholder="Seconds..."
+          onkeydown={(e) => e.key === 'Enter' && saveEditedTime()}
+        />
+        {#if editTimeError}
+          <p class="text-danger text-sm mt-2">{editTimeError}</p>
+        {/if}
+      </div>
+      
+      <div class="bg-surface-light rounded-xl p-3 mb-4">
+        <div class="text-xs text-text-muted mb-1">Current</div>
+        <div class="font-semibold">{currentSet.targetTimeSeconds} sec</div>
+      </div>
+      
+      <div class="flex gap-3">
+        <button
+          onclick={closeEditTimeModal}
+          class="flex-1 px-4 py-3 bg-surface-light hover:bg-surface-light/80 rounded-xl font-medium"
+        >
+          Cancel
+        </button>
+        <button
+          onclick={saveEditedTime}
           class="flex-1 px-4 py-3 bg-primary hover:bg-primary-dark rounded-xl font-medium"
         >
           Save

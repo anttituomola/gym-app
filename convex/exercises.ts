@@ -15,6 +15,12 @@ export interface Exercise {
     percentOfWork: number;
     reps: number;
   }>;
+  isTimeBased?: boolean;
+  defaultTimeSeconds?: number;
+  incrementTimeSeconds?: number;
+  supportsBodyweightProgression?: boolean;
+  defaultReps?: number;
+  defaultIncrementReps?: number;
 }
 
 export const EXERCISES: Exercise[] = [
@@ -71,6 +77,25 @@ export const EXERCISES: Exercise[] = [
       { percentOfWork: 0.60, reps: 3 },
       { percentOfWork: 0.80, reps: 1 }
     ]
+  },
+  {
+    id: 'pull-up',
+    name: 'Pull-up',
+    category: 'pull',
+    primaryMuscles: ['back', 'biceps'],
+    equipment: ['pull-up-bar'],
+    defaultProgression: {
+      incrementKg: 2.5,
+      deloadAfterFailures: 3,
+      deloadPercent: 0.10
+    },
+    warmupFormula: [
+      { percentOfWork: 0, reps: 5 },
+      { percentOfWork: 0.50, reps: 3 }
+    ],
+    supportsBodyweightProgression: true,
+    defaultReps: 8,
+    defaultIncrementReps: 1
   },
   {
     id: 'overhead-press',
@@ -195,7 +220,10 @@ export const EXERCISES: Exercise[] = [
       deloadAfterFailures: 3,
       deloadPercent: 0.10
     },
-    warmupFormula: []
+    warmupFormula: [],
+    isTimeBased: true,
+    defaultTimeSeconds: 60,
+    incrementTimeSeconds: 10
   },
   {
     id: 'lunge',
@@ -236,11 +264,14 @@ export const EXERCISES: Exercise[] = [
     primaryMuscles: ['abs', 'hip-flexors'],
     equipment: ['pull-up-bar'],
     defaultProgression: {
-      incrementKg: 0,
+      incrementKg: 2.5,
       deloadAfterFailures: 3,
       deloadPercent: 0.10
     },
-    warmupFormula: []
+    warmupFormula: [],
+    supportsBodyweightProgression: true,
+    defaultReps: 10,
+    defaultIncrementReps: 2
   },
   {
     id: 'kettlebell-swing',
@@ -314,7 +345,10 @@ export const EXERCISES: Exercise[] = [
       deloadAfterFailures: 3,
       deloadPercent: 0.10
     },
-    warmupFormula: []
+    warmupFormula: [],
+    isTimeBased: true,
+    defaultTimeSeconds: 45,
+    incrementTimeSeconds: 5
   },
   {
     id: 'seated-calf-raise',

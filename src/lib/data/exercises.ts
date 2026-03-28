@@ -257,7 +257,8 @@ export const EXERCISES: Exercise[] = [
     },
     warmupFormula: [],
     isTimeBased: true,
-    defaultTimeSeconds: 60
+    defaultTimeSeconds: 60,
+    incrementTimeSeconds: 10
   },
   {
     id: 'lunge',
@@ -383,7 +384,8 @@ export const EXERCISES: Exercise[] = [
     },
     warmupFormula: [],
     isTimeBased: true,
-    defaultTimeSeconds: 45
+    defaultTimeSeconds: 45,
+    incrementTimeSeconds: 5
   },
   {
     id: 'seated-calf-raise',

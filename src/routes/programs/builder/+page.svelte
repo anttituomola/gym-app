@@ -72,7 +72,21 @@
         existingProgramId = programId;
         programName = program.name;
         programDescription = program.description || '';
-        workouts = program.workouts;
+        workouts = program.workouts.map((w) => ({
+          ...w,
+          exercises: w.exercises.map((ex) => {
+            const ed = getExercise(ex.exerciseId);
+            if (ed?.isTimeBased) {
+              return {
+                ...ex,
+                reps: 0,
+                timeSeconds: ex.timeSeconds ?? ed.defaultTimeSeconds ?? 60,
+                startingWeight: ex.startingWeight ?? 0
+              };
+            }
+            return ex;
+          })
+        }));
       }
     } catch (err) {
       console.error('Failed to load program:', err);
@@ -136,13 +150,22 @@
     const userWeight = userExercises[exercise.id]?.currentWeight;
     const defaultWeight = userWeight ?? 20;
     
-    const newExercise: ProgramExercise = {
-      exerciseId: exercise.id,
-      sets: 3,
-      reps: 5,
-      startingWeight: defaultWeight,
-      progression: { ...exercise.defaultProgression }
-    };
+    const newExercise: ProgramExercise = exercise.isTimeBased
+      ? {
+          exerciseId: exercise.id,
+          sets: 3,
+          reps: 0,
+          timeSeconds: exercise.defaultTimeSeconds ?? 60,
+          startingWeight: 0,
+          progression: { ...exercise.defaultProgression }
+        }
+      : {
+          exerciseId: exercise.id,
+          sets: 3,
+          reps: 5,
+          startingWeight: defaultWeight,
+          progression: { ...exercise.defaultProgression }
+        };
     
     workouts[exerciseSelectorTargetWorkout].exercises = [
       ...workouts[exerciseSelectorTargetWorkout].exercises,
@@ -523,7 +546,33 @@
                     class="w-full bg-surface-light rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
                   />
                 </div>
-                {#if exerciseData?.supportsBodyweightProgression && userExercises[exercise.exerciseId]?.useBodyweightProgression !== false}
+                {#if exerciseData?.isTimeBased}
+                  <div>
+                    <label for="hold-{activeTab + '-' + exerciseIndex}" class="block text-xs text-text-muted mb-1">Hold (sec)</label>
+                    <input
+                      id="hold-{activeTab + '-' + exerciseIndex}"
+                      type="number"
+                      min="5"
+                      max="600"
+                      step="1"
+                      bind:value={exercise.timeSeconds}
+                      disabled={saving}
+                      class="w-full bg-surface-light rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+                    />
+                  </div>
+                  <div>
+                    <label for="weight-t-{activeTab + '-' + exerciseIndex}" class="block text-xs text-text-muted mb-1">Start Wt (kg)</label>
+                    <input
+                      id="weight-t-{activeTab + '-' + exerciseIndex}"
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      bind:value={exercise.startingWeight}
+                      disabled={saving}
+                      class="w-full bg-surface-light rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+                    />
+                  </div>
+                {:else if exerciseData?.supportsBodyweightProgression && userExercises[exercise.exerciseId]?.useBodyweightProgression !== false}
                   <!-- Bodyweight mode: show target reps -->
                   <div>
                     <label for="reps-{activeTab + '-' + exerciseIndex}" class="block text-xs text-text-muted mb-1">Reps</label>

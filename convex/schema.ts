@@ -41,6 +41,8 @@ export default defineSchema({
         useBodyweightProgression: v.optional(v.boolean()),
         targetReps: v.optional(v.number()),
         incrementReps: v.optional(v.number()),
+        holdSeconds: v.optional(v.number()),
+        incrementHoldSeconds: v.optional(v.number()),
       })
     ),
     gymEquipment: v.array(v.string()),
@@ -115,6 +117,7 @@ export default defineSchema({
               })
             ),
             restSeconds: v.optional(v.number()),
+            timeSeconds: v.optional(v.number()),
           })
         ),
       })

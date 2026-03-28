@@ -9,6 +9,8 @@ export interface Exercise {
   warmupFormula: WarmupStep[];
   isTimeBased?: boolean;
   defaultTimeSeconds?: number;
+  /** Seconds added to hold target after a successful workout (time-based) */
+  incrementTimeSeconds?: number;
   supportsBodyweightProgression?: boolean;
   defaultReps?: number;
   defaultIncrementReps?: number;
@@ -38,6 +40,9 @@ export interface UserExerciseSettings {
   useBodyweightProgression?: boolean;
   targetReps?: number;
   incrementReps?: number;
+  /** Current hold target for time-based exercises (seconds), progressed after success */
+  holdSeconds?: number;
+  incrementHoldSeconds?: number;
 }
 
 // Workout structures
@@ -110,6 +115,8 @@ export interface ProgramExercise {
   exerciseId: string;
   sets: number;
   reps: number;
+  /** Hold duration for time-based exercises (e.g. plank), seconds */
+  timeSeconds?: number;
   // Starting weight - if null, will use previous max or default
   startingWeight?: number;
   // Override progression rules from exercise defaults
