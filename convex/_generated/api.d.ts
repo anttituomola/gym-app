@@ -20,6 +20,7 @@ import type * as import_ from "../import.js";
 import type * as onboarding from "../onboarding.js";
 import type * as plates from "../plates.js";
 import type * as programs from "../programs.js";
+import type * as progression from "../progression.js";
 import type * as svelteAuth from "../svelteAuth.js";
 import type * as userProfiles from "../userProfiles.js";
 import type * as warmup from "../warmup.js";
@@ -44,6 +45,7 @@ declare const fullApi: ApiFromModules<{
   onboarding: typeof onboarding;
   plates: typeof plates;
   programs: typeof programs;
+  progression: typeof progression;
   svelteAuth: typeof svelteAuth;
   userProfiles: typeof userProfiles;
   warmup: typeof warmup;
